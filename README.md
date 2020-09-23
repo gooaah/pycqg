@@ -67,7 +67,8 @@ Component       Multiplicity
 
 ## Citations
 If you are referencing Pycqg in a publication, please cite the following paper:
-- Gao, H., Wang, J., Guo, Z. & Sun, J. Dimensionalities and multiplicities determination of crystal nets. arXiv:2001.07565 [cond-mat, physics:physics] (2020).
+- Gao, H., Wang, J., Guo, Z. & Sun, J. Determining dimensionalities and multiplicities of crystal nets. npj Computational Materials 6, 1–9 (2020).
+
 
 ## License
 Pycqg is distributed under the terms of the [GNU Lesser General Public License 3](LICENSE).

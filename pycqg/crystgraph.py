@@ -264,7 +264,7 @@ def nodes_and_offsets(G):
     nodes = list(G.nodes())
     paths = nx.single_source_shortest_path(G, nodes[0])
     for index, i in enumerate(nodes):
-        if index is 0:
+        if index == 0:
             offSets.append([0,0,0])
         else:
             path = paths[i]

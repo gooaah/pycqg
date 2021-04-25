@@ -28,12 +28,13 @@ if __name__ == "__main__":
 
     gen = GraphGenerator()
     # randG = gen.build_graph(atoms, [2,2,2,2,4,4])
-    randG = gen.build_graph(atoms, [4]*len(atoms))
+    randG = gen.build_graph(atoms, [4]*len(atoms)) # set all the coordination numbers as 4
     # randG = gen.build_graph(atoms, [6]*len(atoms))
 
     ratios = edge_ratios(randG)
     print("edge ratios: min: {}, max: {}, mean: {}".format(ratios.min(), ratios.max(), ratios.mean()))
 
+    # Embeding or not
     if embed:
         print("embeding graph")
         stardPos, randG = graph_embedding(randG)
@@ -63,7 +64,7 @@ if __name__ == "__main__":
     # opt.emax = 1e-3
     # opt.run(fmax=0.05, steps=50)
 
-    print(atoms.get_potential_energy())
+    print("Last loss function: {}".format(atoms.get_potential_energy()))
     ase.io.write('end.vasp', atoms, vasp5=1, direct=1)
 
 

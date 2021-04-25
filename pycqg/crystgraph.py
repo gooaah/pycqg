@@ -1,11 +1,11 @@
 ## Crystal Quotient Graph
 from __future__ import print_function, division
 from functools import reduce
-from ase.neighborlist import neighbor_list
+from ase.neighborlist import neighbor_list, primitive_neighbor_list
 from ase.calculators.calculator import Calculator, all_changes
 from ase.optimize import BFGS, LBFGS, FIRE
 from ase.optimize.sciopt import SciPyFminBFGS, SciPyFminCG
-from ase.constraints import UnitCellFilter, ExpCellFilter, StrainFilter 
+from ase.constraints import UnitCellFilter, ExpCellFilter, StrainFilter
 from ase.data import covalent_radii
 import ase.io
 import networkx as nx
@@ -16,7 +16,7 @@ from math import gcd
 def quotient_graph(atoms, coef=1.1,):
     """
     Return crystal quotient graph of the atoms.
-    atoms: (ASE.Atoms) the input crystal structure 
+    atoms: (ASE.Atoms) the input crystal structure
     coef: (float) the criterion for connecting two atoms. If d_{AB} < coef*(r_A + r_B), atoms A and B are regarded as connected. r_A and r_B are covalent radius of A,B.
     Return: networkx.MultiGraph
     """
@@ -99,8 +99,9 @@ def max_graph_dim(G):
     Return: int
     """
     maxDim = 0
-    for i,subG in enumerate(nx.connected_component_subgraphs(G)):
-        dim = graph_dim(subG)
+    # for i,subG in enumerate(nx.connected_component_subgraphs(G)):
+    for c in nx.connected_components(G):
+        dim = graph_dim(G.subgraph(c))
         if dim > maxDim:
             maxDim = dim
     return maxDim
@@ -303,7 +304,44 @@ def search_edges(indices, coords, pairs):
         return edges, edgeInds
     else:
         return None, None
-    
+
+def graph_embedding(graph):
+    """
+    standard embedding of quotient graph.
+    return scaled positions and modified graph
+    """
+    assert nx.number_connected_components(graph) == 1
+
+    if len(graph) == 1:
+        return np.array([[0,0,0]]), graph
+
+    ## Laplacian Matrix
+    lapMat = nx.laplacian_matrix(graph).todense()
+    invLap = np.linalg.inv(lapMat[1:,1:])
+    sMat = np.zeros((len(graph), 3))
+    for edge in graph.edges(data=True):
+        _,_,data = edge
+        i,j = data['direction']
+        sMat[i] += data['vector']
+        sMat[j] -= data['vector']
+    pos = np.dot(invLap,sMat[1:])
+    pos = np.concatenate(([[0,0,0]], pos))
+    pos = np.array(pos)
+    # remove little difference
+    pos[np.abs(pos)<1e-4] = 0
+    # solve offsets
+    offsets = np.floor(pos).astype(np.int)
+    pos -= offsets
+    newG = graph.copy()
+    for edge in newG.edges(data=True, keys=True):
+        m,n, key, data = edge
+        i,j = data['direction']
+        ## modify the quotient graph according to offsets
+        # newG.edge[m][n][key]['vector'] = offsets[j] - offsets[i] + data['vector']
+        newG[m][n][key]['vector'] = offsets[j] - offsets[i] + data['vector']
+
+    return pos, newG
+
 def edge_ratios(graph):
     """
     Analyse distance ratio for every edge
@@ -312,7 +350,7 @@ def edge_ratios(graph):
     for edge in graph.edges(data=True):
         _, _, data = edge
         ratios.append(data['ratio'])
-    
+
     return np.array(ratios)
 
 
@@ -362,7 +400,7 @@ class CrystalGraph:
                 mult = 1
             mults.append(mult)
             # print("{}\t\t{}\t{}".format(i+1, dim, mut))
-        
+
         self.dims = dims
         self.mults = mults
         self.subGs = subGs
@@ -372,7 +410,7 @@ class GraphGenerator:
     def __init__(self):
         pass
 
-    def build_graph(self, atoms, coords, dim=None, maxtry=10, randGen=False):
+    def build_graph(self, atoms, coords, dim=None, maxtry=50, randGen=False):
         """
         Build QG from atoms.
         atoms: (ASE.Atoms) the input crystal structure.
@@ -450,12 +488,12 @@ class GraphGenerator:
                 else:
                     return G
 
-        ## If cannot build the graph, choose the edges randomly
+        ## If we cannot build the graph, we choose the edges randomly
         # raise NotImplementedError("Random generation has never been implemented!")
-        print("Cannot build quotient graph directly.") 
+        print("Cannot build quotient graph directly.")
         if not randGen:
             return None
-            
+
         print("Try to build graph randomly.")
         for _ in range(maxtry):
             randInd = sortInd[:]
@@ -477,3 +515,174 @@ class GraphGenerator:
 
         print("Fail in generating quotient graph.")
         return None
+
+    def optimize(self, calcParm, driver, optParm, standardize=False):
+        """
+        Optimize structure according to the quotient graph.
+        calcParm: dict, parameters of GraphCalculator
+        driver: optimization driver, such as ase.optimize.BFGS
+        optParm: dict, parameters of optimization driver
+        standardize: If True, change the scaled positions of atoms to standard placement before optimization.
+        """
+        graph = self.randG
+        atoms = self.originAtoms.copy()
+
+        if standardize:
+            standPos, graph = graph_embedding(graph)
+            atoms.set_scaled_positions(standPos)
+
+        calc = GraphCalculator(**calcParm)
+        atoms.set_calculator(calc)
+        atoms.info['graph'] = graph.copy()
+
+class GraphCalculator(Calculator):
+    """
+    Calculator written for optimizing crystal structure based on an initial quotient graph.
+    I design the potential so that the following criteria are fulfilled when the potential energy equals zero:
+    Suppose there are two atoms A, B. R_{AB} = r_{A} + r_{B} is the sum of covalent radius.
+    If A,B are bonded, cmin <= d_{AB}/R_{AB} <= cmax.
+    If A,B are not bonded, cmax+cadd <= d_{AB}/R_{AB}.
+    """
+    implemented_properties = ['energy', 'forces', 'stress']
+    default_parameters = {
+        'cmin': 0.5,
+        'cmax': 1,
+        'cadd': 0.,
+        'k1': 1e-1,
+        'k2': 1e-1,
+        # 'mode': 0,
+    }
+    def __init__(self, **kwargs):
+        Calculator.__init__(self, **kwargs)
+
+    def calculate(self, atoms=None, properties=['energy'], system_changes=all_changes):
+        # Calculator.calculate(self, atoms, properties, system_changes)
+        graph = atoms.info['graph']
+        Nat = len(atoms)
+        assert Nat == len(graph), "Number of atoms should equal number of nodes in the initial graph!"
+
+        numbers = atoms.get_atomic_numbers()
+
+        cmax = self.parameters.cmax
+        cmin = self.parameters.cmin
+        cadd = self.parameters.cadd
+        k1 = self.parameters.k1
+        k2 = self.parameters.k2
+        # mode = self.parameters.mode
+
+        # print(cadd)
+
+        energy = 0.
+        forces = np.zeros((Nat, 3))
+        stress = np.zeros((3, 3))
+
+        # print("Calling GraphCalculator.calculate")
+
+        ## offsets for all atoms
+        spos = atoms.get_scaled_positions(wrap=False)
+        # remove little difference
+        spos[np.abs(spos)<1e-4] = 0
+        offsets = np.floor(spos).astype(np.int)
+        # print(offsets[-1])
+        # print(atoms.positions[-1,1])
+        # if mode == 1:
+        #     atoms.wrap()
+        #     pos = atoms.get_positions(wrap=True)
+        # elif mode == 0:
+        pos = atoms.get_positions()
+        cell = atoms.get_cell()
+        pairs = []
+        ## Consider bonded atom pairs
+        for edge in graph.edges(data=True, keys=True):
+            m,n, key, data = edge
+            i,j = data['direction']
+            # ## modify the quotient graph according to offsets
+            # if mode == 1:
+            #     edgeVec = offsets[j] - offsets[i] + data['vector']
+            #     n1, n2, n3 = edgeVec
+            # elif mode == 0:
+            edgeVec = data['vector']
+            n1, n2, n3 = offsets[j] - offsets[i] + data['vector']
+
+            # graph.edge[m][n][key]['vector'] = edgeVec
+            graph[m][n][key]['vector'] = edgeVec
+            pairs.append((i,j,n1,n2,n3))
+            rsum = covalent_radii[numbers[i]] + covalent_radii[numbers[j]]
+            Dmin = cmin * rsum
+            Dmax = cmax * rsum
+            # print("bond")
+            # print(Dmax)
+            cells = np.dot(edgeVec, cell)
+            dvec = pos[j] + cells - pos[i]
+            D = np.linalg.norm(dvec)
+            uvec = dvec/D
+            if Dmin <= D <= Dmax:
+                continue
+            else:
+                if D < Dmin:
+                    # scalD = (D-Dmin)/rsum
+                    # energy += 0.5*k1*scalD**2
+                    # f = k1*scalD*uvec/rsum
+                    energy += 0.5*k1*(D-Dmin)**2
+                    f = k1*(D-Dmin)*uvec
+                elif D > Dmax:
+                    # scalD = (D-Dmax)/rsum
+                    # energy += 0.5*k1*scalD**2
+                    # f = k1*scalD*uvec/rsum
+                    energy += 0.5*k1*(D-Dmax)**2
+                    f = k1*(D-Dmax)*uvec
+                forces[i] += f
+                forces[j] -= f
+                stress += np.dot(f[np.newaxis].T, dvec[np.newaxis])
+
+        # To avoid wraping positions, I copy a new atoms.
+        copyAts = atoms.copy()
+        copyAts.wrap()
+        pos = copyAts.get_positions()
+        ## Consider unbonded atom pairs
+        cutoffs = [covalent_radii[n]*(cmax+cadd+0.05) for n in numbers]
+        # for i, j, S in zip(*neighbor_list('ijS', atoms, cutoffs)):
+        for i, j, S in zip(*neighbor_list('ijS', copyAts, cutoffs)):
+            if i <= j:
+                # if i,j is bonded, skip this process
+                n1,n2,n3 = S
+                pair1 = (i,j,n1,n2,n3)
+                pair2 = (j,i,-n1,-n2,-n3)
+                if pair1 in pairs or pair2 in pairs:
+                    # print("Skip")
+                    continue
+                rsum = covalent_radii[numbers[i]] + covalent_radii[numbers[j]]
+                Dmax = (cmax+cadd) * rsum
+                # print("Unbond")
+                # print(Dmax)
+                cells = np.dot(S, cell)
+                dvec = pos[j] + cells - pos[i]
+                D = np.linalg.norm(dvec)
+                if D > 1e-3:
+                    uvec = dvec/D
+                else:
+                    dvec = np.random.rand(3)
+                    D = np.linalg.norm(dvec)
+                    uvec = dvec/D
+                    D = 1e-3
+                if D < Dmax:
+                    energy += 0.5*k2*(D-Dmax)**2
+                    f = k2*(D-Dmax)*uvec
+                    forces[i] += f
+                    forces[j] -= f
+                    stress += np.dot(f[np.newaxis].T, dvec[np.newaxis])
+
+
+        # if mode == 1:
+        #     ## save the quotient graph
+        #     atoms.info['graph'] = graph
+        #     atoms.wrap()
+
+        # self.atoms = atoms
+
+        stress = 1*stress/atoms.get_volume()
+
+        self.results['energy'] = energy
+        self.results['free_energy'] = energy
+        self.results['forces'] = forces
+        self.results['stress'] = stress.flat[[0, 4, 8, 5, 2, 1]]

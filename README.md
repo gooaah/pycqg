@@ -5,7 +5,7 @@ A Python package for construction and analysis of crystal quotient graphs.
 ## Dependencies
 - NumPy
 - ASE
-- NetworkX
+- NetworkX 2.5
 
 ## Usage of the script
 First add the path of this project into `PYTHONPATH`.

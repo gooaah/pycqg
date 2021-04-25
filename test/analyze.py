@@ -23,24 +23,26 @@ if __name__ == "__main__":
 
     QG = quotient_graph(atoms, coef)
     edges = QG.edges()
-    degree = QG.degree()
+    degree = dict(QG.degree())
     print("number of bonds: %s"% (len(edges)))
-    print("Number of self loops: {}".format(QG.number_of_selfloops()))
+    # print("Number of self loops: {}".format(QG.number_of_selfloops()))
     print("Number of parallel edges: {}".format(number_of_parallel_edges(QG)))
     print("Number of components: {}".format(nx.number_connected_components(QG)))
-    print("Coordination Numbers: {}".format(list(degree.values())))
+    # print("Coordination Numbers: {}".format(list(degree.values())))
 
 
     print("Component\tDimension")
-    for i,subG in enumerate(nx.connected_component_subgraphs(QG)):
-        dim = graph_dim(subG)
+    # for i,subG in enumerate(nx.connected_component_subgraphs(QG)):
+    for i,subG in enumerate(nx.connected_components(QG)):
+        dim = graph_dim(QG.subgraph(subG))
         print("{}\t\t{}".format(i+1, dim))
     print("Max Dimension: {}".format(max_graph_dim(QG)))
 
     print("\nCalculating Multplicities...")
     print("Component\tMultiplicity")
-    for i,subG in enumerate(nx.connected_component_subgraphs(QG)):
-        subCS = cycle_sums(subG)
+    # for i,subG in enumerate(nx.connected_component_subgraphs(QG)):
+    for i,subG in enumerate(nx.connected_components(QG)):
+        subCS = cycle_sums(QG.subgraph(subG))
         dim = np.linalg.matrix_rank(subCS)
         if dim == 3:
             print("{}\t\t{}".format(i+1,getMult_3D(subCS)))

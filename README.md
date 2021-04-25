@@ -25,7 +25,7 @@ $ python analyze.py <StructureFile> <BondRatio>
 
 `StructureFile` should be supported by `ASE`. `BondRatio` is the criterion to connect atoms. The default value is 1.1.
 
-`testopt.py` firstly finds the optimal quotient graph for the configuration with given coordination numbers (using the method proposed in https://link.aps.org/doi/10.1103/PhysRevB.97.014104). Then the script adjusts the atomic positions and lattice to make the structure fitted to the quotient graph.
+`testopt.py` firstly finds the optimal quotient graph for the configuration with given coordination numbers (using the method proposed in https://link.aps.org/doi/10.1103/PhysRevB.97.014104). Then the script optimizes the atomic positions and lattice to make the structure fitted to the quotient graph.
 
 ``` shell
 $ python testopt.py <StructureFile> <Embed>
@@ -80,7 +80,7 @@ Component       Multiplicity
 1               2
 ```
 
-### Optimize structure based quotient graph
+### Optimize structure based on quotient graph
 ``` shell
 $ python testopt.py rand_1.cif
 edge ratios: min: 1.3016713493158165, max: 1.8759146848507082, mean: 1.5974768198995881

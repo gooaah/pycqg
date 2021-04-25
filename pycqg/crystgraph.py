@@ -385,7 +385,8 @@ class CrystalGraph:
         dims = []
         mults = []
         subGs = []
-        for i, subG in enumerate(nx.connected_component_subgraphs(self.graph)):
+        for comp in enumerate(nx.connected_components(self.graph)):
+            subG = self.graph.subgraph(comp).copy()
             subGs.append(subG)
             cycSum = cycle_sums(subG)
             dim = np.linalg.matrix_rank(cycSum)
@@ -635,7 +636,9 @@ class GraphCalculator(Calculator):
                 forces[j] -= f
                 stress += np.dot(f[np.newaxis].T, dvec[np.newaxis])
 
-        # To avoid wraping positions, I copy a new atoms.
+        # Wraping atoms might lead to changing vector labels.
+        # Thererfore, to avoid wraping positions, 
+        # I copy a new atoms and get wrapped positions
         copyAts = atoms.copy()
         copyAts.wrap()
         pos = copyAts.get_positions()

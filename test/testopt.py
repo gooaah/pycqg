@@ -56,7 +56,7 @@ if __name__ == "__main__":
     # opt = BFGS(ExpCellFilter(atoms))
     # opt = SciPyFminCG(ExpCellFilter(atoms))
     # opt = graphOpt(StrainFilter(atoms))
-    opt = graphOpt(ExpCellFilter(atoms),maxstep=0.2)
+    opt = graphOpt(ExpCellFilter(atoms),maxstep=1)
     # opt.emax = 1e-3
     # opt = graphOpt(ExpCellFilter(atoms))
     opt.run(fmax=0, steps=500)

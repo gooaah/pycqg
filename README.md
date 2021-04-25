@@ -22,7 +22,6 @@ The structure `COD_7027514.cif` contains 2D, 1D, and 0D components.
 ``` shell
 $ python analyze.py COD_7027514.cif
 number of bonds: 80
-Number of self loops: 0
 Number of parallel edges: 0
 Number of compenents: 7
 Component       Dimension
@@ -52,7 +51,6 @@ The structure `Cu2O.cif` contains two translationally equivalent but disconnecte
 ``` shell
 $ python analyze.py Cu2O.cif
 number of bonds: 8
-Number of self loops: 0
 Number of parallel edges: 0
 Number of compenents: 1
 Component       Dimension

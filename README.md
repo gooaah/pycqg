@@ -96,7 +96,7 @@ graphOpt:    6 20:19:23        0.000000        0.0000
 Last loss function: 0.0
 ```
 
-`rand_1.cif` is a random carbon structure. The shortest C-C distance is 1.97 A, which larger than the typical C-C bond length. In `testopt.py`, coordination numbers of all the atoms are set as 4. The newly generated file `end.vasp` is the final structure, in which all the coordination numbers become 4 after optimization.
+`rand_1.cif` is a random carbon structure. The shortest C-C distance is 1.97 A, which is larger than the typical C-C bond length. In `testopt.py`, coordination numbers of all the atoms are set as 4. The newly generated file `end.vasp` is the final structure, in which all the coordination numbers become 4 after optimization.
 
 ## Citations
 If you are referencing Pycqg in a publication, please cite the following paper:

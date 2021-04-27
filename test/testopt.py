@@ -1,4 +1,4 @@
- #!/usr/bin/env python
+#!/usr/bin/env python
 ## Crystal Quotient Graph
 from __future__ import print_function, division
 import ase.io
@@ -31,8 +31,12 @@ if __name__ == "__main__":
     randG = gen.build_graph(atoms, [4]*len(atoms)) # set all the coordination numbers as 4
     # randG = gen.build_graph(atoms, [6]*len(atoms))
 
-    ratios = edge_ratios(randG)
-    print("edge ratios: min: {}, max: {}, mean: {}".format(ratios.min(), ratios.max(), ratios.mean()))
+    if randG is not None:
+        ratios = edge_ratios(randG)
+        print("edge ratios: min: {}, max: {}, mean: {}".format(ratios.min(), ratios.max(), ratios.mean()))
+    else:
+        print("Fail in generating graph!")
+        sys.exit()
 
     # Embeding or not
     if embed:
@@ -59,7 +63,7 @@ if __name__ == "__main__":
     opt = graphOpt(ExpCellFilter(atoms),maxstep=1)
     # opt.emax = 1e-3
     # opt = graphOpt(ExpCellFilter(atoms))
-    opt.run(fmax=0, steps=500)
+    opt.run(fmax=0, steps=200)
     # # # opt = BFGS(atoms, maxstep=0.5)
     # opt.emax = 1e-3
     # opt.run(fmax=0.05, steps=50)

@@ -25,10 +25,10 @@ $ python analyze.py <StructureFile> <BondRatio>
 
 `StructureFile` should be supported by `ASE`. `BondRatio` is the criterion to connect atoms. The default value is 1.1.
 
-`testopt.py` firstly finds the optimal quotient graph for the configuration with given coordination numbers (using the method proposed in https://link.aps.org/doi/10.1103/PhysRevB.97.014104). Then the script optimizes the atomic positions and lattice to make the structure fitted to the quotient graph.
+`opt.py` firstly finds the optimal quotient graph for the configuration with given coordination numbers (using the method proposed in https://link.aps.org/doi/10.1103/PhysRevB.97.014104). Then the script optimizes the atomic positions and lattice to make the structure fitted to the quotient graph.
 
 ``` shell
-$ python testopt.py <StructureFile> <Embed>
+$ python opt.py <StructureFile> <Embed>
 ```
 `Embed` decides whether the quotient graph is embeded into real space to generate initial structures. The default value is 0 (do not embed).
 
@@ -82,7 +82,7 @@ Component       Multiplicity
 
 ### Optimize structure based on quotient graph
 ``` shell
-$ python testopt.py rand_1.cif
+$ python opt.py rand_1.cif
 edge ratios: min: 1.3016713493158165, max: 1.8759146848507082, mean: 1.5974768198995881
 Optimize the structure using methods in ASE:
           Step     Time          Energy         fmax
@@ -96,7 +96,7 @@ graphOpt:    6 20:19:23        0.000000        0.0000
 Last loss function: 0.0
 ```
 
-`rand_1.cif` is a random carbon structure. The shortest C-C distance is 1.97 A, which is larger than the typical C-C bond length. In `testopt.py`, coordination numbers of all the atoms are set as 4. The newly generated file `end.vasp` is the final structure, in which all the coordination numbers become 4 after optimization.
+`rand_1.cif` is a random carbon structure. The shortest C-C distance is 1.97 A, which is larger than the typical C-C bond length. In `opt.py`, coordination numbers of all the atoms are set as 4. The newly generated file `end.vasp` is the final structure, in which all the coordination numbers become 4 after optimization.
 
 ## Citations
 If you are referencing Pycqg in a publication, please cite the following paper:

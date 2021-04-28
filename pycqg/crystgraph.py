@@ -22,14 +22,17 @@ def quotient_graph(atoms, coef=1.1,):
     """
 
     cutoffs = [covalent_radii[number]*coef for number in atoms.get_atomic_numbers()]
+    radius = [covalent_radii[number] for number in atoms.get_atomic_numbers()]
     # print("cutoffs: %s" %(cutoffs))
     G = nx.MultiGraph()
     for i in range(len(atoms)):
         G.add_node(i)
 
-    for i, j, S in zip(*neighbor_list('ijS', atoms, cutoffs)):
+    for i, j, S, d in zip(*neighbor_list('ijSd', atoms, cutoffs)):
         if i <= j:
-            G.add_edge(i,j, vector=S, direction=(i,j))
+            rsum = radius[i] + radius[j]
+            ratio = d/rsum # bond parameter
+            G.add_edge(i,j, vector=S, direction=(i,j), ratio=ratio)
 
     return G
 
@@ -353,6 +356,24 @@ def edge_ratios(graph):
 
     return np.array(ratios)
 
+def min_unbond_ratio(atoms, bondCoef, maxCoef=2.):
+    """
+    Compute min distance ration for unbonded atom pairs
+    """
+    assert bondCoef < maxCoef, "Bonded ratios should be less than unbonded ratios."
+    curCoef = maxCoef
+    cutoffs = [covalent_radii[number]*maxCoef for number in atoms.get_atomic_numbers()]
+    radius = [covalent_radii[number] for number in atoms.get_atomic_numbers()]
+
+    for i, j, d in zip(*neighbor_list('ijd', atoms, cutoffs)):
+        if i <= j:
+            rsum = radius[i] + radius[j]
+            ratio = d/rsum # bond parameter
+            if bondCoef < ratio < curCoef:
+                curCoef = ratio
+
+    return curCoef
+
 
 class CrystalGraph:
     def __init__(self, atoms, coef=1.1, buildQG=True):
@@ -616,7 +637,12 @@ class GraphCalculator(Calculator):
             cells = np.dot(edgeVec, cell)
             dvec = pos[j] + cells - pos[i]
             D = np.linalg.norm(dvec)
-            uvec = dvec/D
+            # when the distance is too small
+            if D > 1e-3:
+                uvec = dvec/D
+            else:
+                dvec = np.random.rand(3)
+                uvec = dvec/np.linalg.norm(dvec)
             if Dmin <= D <= Dmax:
                 continue
             else:
@@ -632,6 +658,11 @@ class GraphCalculator(Calculator):
                     # f = k1*scalD*uvec/rsum
                     energy += 0.5*k1*(D-Dmax)**2
                     f = k1*(D-Dmax)*uvec
+                # elif D <= 1e-3: # when the distance is too small
+                #     energy += 0.5*k1*(D-Dmin)**2
+                #     dvec = np.random.rand(3)
+                #     uvec = dvec/np.linalg.norm(dvec)
+                #     f = k1*(D-Dmin)*uvec
                 forces[i] += f
                 forces[j] -= f
                 stress += np.dot(f[np.newaxis].T, dvec[np.newaxis])
@@ -667,7 +698,7 @@ class GraphCalculator(Calculator):
                     dvec = np.random.rand(3)
                     D = np.linalg.norm(dvec)
                     uvec = dvec/D
-                    D = 1e-3
+                    # D = 1e-3
                 if D < Dmax:
                     energy += 0.5*k2*(D-Dmax)**2
                     f = k2*(D-Dmax)*uvec

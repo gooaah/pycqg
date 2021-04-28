@@ -2,6 +2,7 @@
 *.vasp
 *.traj
 test*.py
+*_mp-*.cif
 
 # Byte-compiled / optimized / DLL files
 __pycache__/

@@ -345,6 +345,33 @@ def graph_embedding(graph):
 
     return pos, newG
 
+def barycenter_disp(atoms, graph):
+    """
+    Compute the displacement of every atom from the barycenter of neighboring atoms.
+    atoms: ASE Atoms object, the structure
+    graph: the quotient graph related to atoms
+    """
+
+    assert len(atoms) == graph.number_of_nodes(), "The number of atoms should equal to number of nodes in graph!"
+
+    pos = atoms.get_scaled_positions()
+    # Sum of neighboring positions
+    sumPos = np.zeros_like(pos)
+    degrees = np.zeros(len(atoms))
+    for edge in graph.edges(data=True):
+        _,_,data = edge
+        i,j = data['direction']
+        sumPos[i] += pos[j] + data['vector']
+        sumPos[j] += pos[i] - data['vector']
+        degrees[i] += 1
+        degrees[j] += 1
+    
+    barycenters = sumPos / np.expand_dims(degrees,1)
+    disp = pos - barycenters
+
+    return disp
+
+
 def edge_ratios(graph):
     """
     Analyse distance ratio for every edge
@@ -356,11 +383,14 @@ def edge_ratios(graph):
 
     return np.array(ratios)
 
-def min_unbond_ratio(atoms, bondCoef, maxCoef=2.):
+def min_unbond_ratio(atoms, bondCoef):
     """
     Compute min distance ration for unbonded atom pairs
+    atoms: ASE's Atoms object, the input structure
+    bondCoef: same to coef in quotient_graph(), the cutoff parameter
     """
-    assert bondCoef < maxCoef, "Bonded ratios should be less than unbonded ratios."
+    # assert bondCoef < maxCoef, "Bonded ratios should be less than unbonded ratios."
+    maxCoef = bondCoef + 1
     curCoef = maxCoef
     cutoffs = [covalent_radii[number]*maxCoef for number in atoms.get_atomic_numbers()]
     radius = [covalent_radii[number] for number in atoms.get_atomic_numbers()]
@@ -573,6 +603,8 @@ class GraphCalculator(Calculator):
         'k1': 1e-1,
         'k2': 1e-1,
         # 'mode': 0,
+        'useGraphRatio': False,
+        'ratioErr': 0.1,
     }
     def __init__(self, **kwargs):
         Calculator.__init__(self, **kwargs)
@@ -590,7 +622,10 @@ class GraphCalculator(Calculator):
         cadd = self.parameters.cadd
         k1 = self.parameters.k1
         k2 = self.parameters.k2
+        useGraphRatio = self.parameters.useGraphRatio
+        ratioErr = self.parameters.ratioErr
         # mode = self.parameters.mode
+        cunbond = cmax + cadd
 
         # print(cadd)
 
@@ -630,6 +665,12 @@ class GraphCalculator(Calculator):
             graph[m][n][key]['vector'] = edgeVec
             pairs.append((i,j,n1,n2,n3))
             rsum = covalent_radii[numbers[i]] + covalent_radii[numbers[j]]
+            # Use ratio attached in graph or not
+            if useGraphRatio:
+                ratio = data['ratio']
+                # cmax = ratio + ratioErr
+                cmax = ratio
+                cmin = ratio - ratioErr
             Dmin = cmin * rsum
             Dmax = cmax * rsum
             # print("bond")
@@ -674,7 +715,7 @@ class GraphCalculator(Calculator):
         copyAts.wrap()
         pos = copyAts.get_positions()
         ## Consider unbonded atom pairs
-        cutoffs = [covalent_radii[n]*(cmax+cadd+0.05) for n in numbers]
+        cutoffs = [covalent_radii[n]*(cunbond+0.05) for n in numbers]
         # for i, j, S in zip(*neighbor_list('ijS', atoms, cutoffs)):
         for i, j, S in zip(*neighbor_list('ijS', copyAts, cutoffs)):
             if i <= j:
@@ -686,7 +727,7 @@ class GraphCalculator(Calculator):
                     # print("Skip")
                     continue
                 rsum = covalent_radii[numbers[i]] + covalent_radii[numbers[j]]
-                Dmax = (cmax+cadd) * rsum
+                Dmax = (cunbond) * rsum
                 # print("Unbond")
                 # print(Dmax)
                 cells = np.dot(S, cell)

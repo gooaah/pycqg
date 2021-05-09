@@ -10,7 +10,7 @@ from ase.data import covalent_radii
 import ase.io
 import networkx as nx
 import numpy as np
-import sys, itertools
+import sys, itertools, functools
 from math import gcd
 
 def quotient_graph(atoms, coef=1.1,):
@@ -110,11 +110,15 @@ def max_graph_dim(G):
     return maxDim
 
 def reduce_cycSums(cycSums):
+    """
+    Delete zero and duplicate vectors in the input cycle sum matrix.
+    (Transform the type of elements to int)
+    """
 
     csArr = cycSums.tolist()
     noZeroSum = []
     for cs in csArr:
-        cst = tuple(cs)
+        cst = tuple([int(n) for n in cs])
         if cst != (0,0,0):
             # if cst[0] < 0:
             if num_geq_zero(cst) < 2:
@@ -136,10 +140,81 @@ def num_geq_zero(vec):
 
     return n
 
+def get_basis(cycSums):
+    """
+    Get the basis of the cycle sum matrix and self-penetation multiplicity.
+    
+    Parameters:
+
+    cycSums: a matrix (Nx3)
+        cycle sum matrix
+
+    Returns:
+
+    basis: a matrix (Dx3)
+        basic vectors. D is the dimensionality or rank.
+    mult: int
+        self-penetation multiplicity
+    """
+
+    dim = np.linalg.matrix_rank(cycSums)
+    noZeroMat = reduce_cycSums(cycSums)
+
+
+    # multiplicity
+    mult = None
+    basis = None
+    if dim == 3: 
+        for comb in itertools.combinations(range(len(noZeroMat)), 3):
+            mat = noZeroMat[list(comb)]
+            m = abs(np.linalg.det(mat))
+            if mult and m > 1e-3 and m < mult: # avoid error led by float type
+                mult = int(m)
+                basis = mat
+            elif not mult:
+                mult = int(m)
+                basis = mat
+
+    elif dim == 2:
+        for comb in itertools.combinations(range(len(noZeroMat)), 2):
+            mat = noZeroMat[list(comb)]
+            # cross product of two vector
+            # convert to int for gcd
+            detRow = [int(i) for i in np.cross(mat[0], mat[1])]
+            m = functools.reduce(gcd, detRow)
+            if mult and m > 0 and m < mult: 
+                mult = m
+                basis = mat
+            elif not mult:
+                mult = m
+                basis = mat
+
+    elif dim == 1:
+        for row in noZeroMat.tolist():
+            mat = [int(i) for i in row]
+            m = functools.reduce(gcd, mat)
+            if mult and m > 0 and m < mult: 
+                mult = m
+                basis = mat
+            elif not mult:
+                mult = m
+                basis = mat
+
+    elif dim == 0:
+        basis = []
+        mult = 1
+
+    else:
+        raise RuntimeError("Please check the input matrix!")
+    
+    return basis, mult
+
+
+
+
 def getMult_3D(cycSums):
     """
     Return the self-penetration multiplicities of the 3D crystal quotient graph G.
-    G: networkx.MultiGraph
     Return: int
     """
     assert np.linalg.matrix_rank(cycSums) == 3
@@ -158,7 +233,6 @@ def getMult_3D(cycSums):
 def getMult_2D(cycSums):
     """
     Return the self-penetration multiplicities of the 2D crystal quotient graph G.
-    G: networkx.MultiGraph
     Return: int
     """
     assert np.linalg.matrix_rank(cycSums) == 2
@@ -178,7 +252,6 @@ def getMult_2D(cycSums):
 def getMult_1D(cycSums):
     """
     Return the self-penetration multiplicities of the 1D crystal quotient graph G.
-    G: networkx.MultiGraph
     Return: int
     """
     assert np.linalg.matrix_rank(cycSums) == 1
@@ -267,15 +340,47 @@ def find_communities(QG):
     partition = []
     # inputArr = list(nx.connected_component_subgraphs(tmpG))
     inputArr = [tmpG.subgraph(comp).copy() for comp in nx.connected_components(tmpG)]
+    step = 0
     while len(inputArr) > 0:
         c = inputArr.pop()
-        if graph_dim(c) == 0:
+        compDim = graph_dim(c)
+        if compDim == 0:
             partition.append(list(c.nodes()))
-            print("0D {}".format(c.nodes()))
+            print("community 0D {}".format(c.nodes()))
         else:
             comp=nx.algorithms.community.girvan_newman(c)
-            print("GN step")
+            step += 1
+            print("GN step {}".format(step))
             for indices in next(comp):
+                print("{}D".format(compDim))
+                print(indices)
+                inputArr.append(tmpG.subgraph(indices))
+
+    return partition
+
+def find_communities_3D(QG):
+    """
+    Find communitis with dimensionality lower than 3 of crystal quotient graph QG using Girva_Newman algorithm.
+    QG: networkx.MultiGraph
+    Return: a list of networkx.MultiGraph
+    """
+    tmpG = remove_selfloops(QG)
+    partition = []
+    # inputArr = list(nx.connected_component_subgraphs(tmpG))
+    inputArr = [tmpG.subgraph(comp).copy() for comp in nx.connected_components(tmpG)]
+    step = 0
+    while len(inputArr) > 0:
+        c = inputArr.pop()
+        compDim = graph_dim(c)
+        if compDim < 3:
+            partition.append(list(c.nodes()))
+            print("community {}D {}".format(compDim, c.nodes()))
+        else:
+            comp=nx.algorithms.community.girvan_newman(c)
+            step += 1
+            print("GN step {}".format(step))
+            for indices in next(comp):
+                print("{}D".format(compDim))
                 print(indices)
                 inputArr.append(tmpG.subgraph(indices))
 
@@ -463,26 +568,30 @@ class CrystalGraph:
         dims = []
         mults = []
         subGs = []
+        bases = []
         for comp in enumerate(nx.connected_components(self.graph)):
             subG = self.graph.subgraph(comp).copy()
             subGs.append(subG)
             cycSum = cycle_sums(subG)
             dim = np.linalg.matrix_rank(cycSum)
             dims.append(dim)
-            if dim == 3:
-                mult = getMult_3D(cycSum)
-            elif dim == 2:
-                mult = getMult_2D(cycSum)
-            elif dim == 1:
-                mult = getMult_1D(cycSum)
-            elif dim == 0:
-                mult = 1
+            # if dim == 3:
+            #     mult = getMult_3D(cycSum)
+            # elif dim == 2:
+            #     mult = getMult_2D(cycSum)
+            # elif dim == 1:
+            #     mult = getMult_1D(cycSum)
+            # elif dim == 0:
+            #     mult = 1
+            basis, mult = get_basis(cycSum)
             mults.append(mult)
+            bases.append(basis)
             # print("{}\t\t{}\t{}".format(i+1, dim, mut))
 
         self.dims = dims
         self.mults = mults
         self.subGs = subGs
+        self.bases = bases
 
 
 class GraphGenerator:

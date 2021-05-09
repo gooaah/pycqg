@@ -206,8 +206,9 @@ def number_of_parallel_edges(QG):
             numPE += 1
     return numPE
 
-def find_communities(QG):
+def find_communities_old1(QG):
     """
+    (Old version)
     Find communitis of crystal quotient graph QG using Girva_Newman algorithm.
     QG: networkx.MultiGraph
     Return: a list of networkx.MultiGraph
@@ -224,7 +225,7 @@ def find_communities(QG):
     partition = [list(p) for p in c]
     return partition
 
-def find_communities2(QG, maxStep=1000):
+def find_communities_old2(QG, maxStep=1000):
     """
     Find communitis of crystal quotient graph QG using Girva_Newman algorithm, slightly different from find_communities.
     QG: networkx.MultiGraph
@@ -256,9 +257,35 @@ def find_communities2(QG, maxStep=1000):
                 tmpG = reduce(nx.union, extendList)
                 break
 
+def find_communities(QG):
+    """
+    Find communitis of crystal quotient graph QG using Girva_Newman algorithm.
+    QG: networkx.MultiGraph
+    Return: a list of networkx.MultiGraph
+    """
+    tmpG = remove_selfloops(QG)
+    partition = []
+    # inputArr = list(nx.connected_component_subgraphs(tmpG))
+    inputArr = [tmpG.subgraph(comp).copy() for comp in nx.connected_components(tmpG)]
+    while len(inputArr) > 0:
+        c = inputArr.pop()
+        if graph_dim(c) == 0:
+            partition.append(list(c.nodes()))
+            print("0D {}".format(c.nodes()))
+        else:
+            comp=nx.algorithms.community.girvan_newman(c)
+            print("GN step")
+            for indices in next(comp):
+                print(indices)
+                inputArr.append(tmpG.subgraph(indices))
+
+    return partition
+
+
 def remove_selfloops(G):
     newG = G.copy()
-    loops = list(newG.selfloop_edges())
+    # loops = list(newG.selfloop_edges())
+    loops = list(nx.selfloop_edges(G))
     newG.remove_edges_from(loops)
     return newG
 

@@ -1,7 +1,7 @@
 ## Crystal Quotient Graph
 from __future__ import print_function, division
 from functools import reduce
-from ase.neighborlist import neighbor_list, primitive_neighbor_list
+from ase.neighborlist import neighbor_list
 from ase.calculators.calculator import Calculator, all_changes
 from ase.optimize import BFGS, LBFGS, FIRE
 from ase.optimize.sciopt import SciPyFminBFGS, SciPyFminCG
@@ -464,7 +464,7 @@ def graph_embedding(graph):
     pos = np.concatenate(([[0,0,0]], pos))
     pos = np.array(pos)
     # remove little difference
-    pos[np.abs(pos)<1e-4] = 0
+    pos[np.abs(pos)<1e-8] = 0
     # solve offsets
     offsets = np.floor(pos).astype(np.int)
     pos -= offsets
@@ -826,6 +826,11 @@ class GraphCalculator(Calculator):
         # mode = self.parameters.mode
         cunbond = cmax + cadd
 
+        # sums of radius
+        radArr = covalent_radii[atoms.get_atomic_numbers()]
+        radArr = np.expand_dims(radArr,1)
+        rsumMat = radArr + radArr.T
+
         # print(cadd)
 
         energy = 0.
@@ -837,8 +842,10 @@ class GraphCalculator(Calculator):
         ## offsets for all atoms
         spos = atoms.get_scaled_positions(wrap=False)
         # remove little difference
-        spos[np.abs(spos)<1e-4] = 0
+        # TODO: The operator (set zero) hinders optimization of CoAs2_mp-2715. But it is important for AgF2_mp-7715. It needs more test.
+        spos[np.abs(spos)<1e-8] = 0
         offsets = np.floor(spos).astype(np.int)
+        offsets = np.zeros_like(spos)
         # print(offsets[-1])
         # print(atoms.positions[-1,1])
         # if mode == 1:
@@ -858,12 +865,15 @@ class GraphCalculator(Calculator):
             #     n1, n2, n3 = edgeVec
             # elif mode == 0:
             edgeVec = data['vector']
+            ## TODO: Not sure whether offset is crucial
             n1, n2, n3 = offsets[j] - offsets[i] + data['vector']
+            # n1, n2, n3 = offsets[j] - offsets[i] + data['vector']
 
             # graph.edge[m][n][key]['vector'] = edgeVec
             graph[m][n][key]['vector'] = edgeVec
             pairs.append((i,j,n1,n2,n3))
-            rsum = covalent_radii[numbers[i]] + covalent_radii[numbers[j]]
+            # rsum = covalent_radii[numbers[i]] + covalent_radii[numbers[j]]
+            rsum = rsumMat[i,j]
             # Use ratio attached in graph or not
             if useGraphRatio:
                 ratio = data['ratio']
@@ -910,13 +920,16 @@ class GraphCalculator(Calculator):
         # Wraping atoms might lead to changing vector labels.
         # Thererfore, to avoid wraping positions, 
         # I copy a new atoms and get wrapped positions
-        copyAts = atoms.copy()
-        copyAts.wrap()
-        pos = copyAts.get_positions()
+        # copyAts = atoms.copy()
+        # copyAts.wrap()
+        # pos = copyAts.get_positions()
+        pos = atoms.get_positions()
         ## Consider unbonded atom pairs
-        cutoffs = [covalent_radii[n]*(cunbond+0.05) for n in numbers]
-        # for i, j, S in zip(*neighbor_list('ijS', atoms, cutoffs)):
-        for i, j, S in zip(*neighbor_list('ijS', copyAts, cutoffs)):
+        cutoffs = [covalent_radii[n]*cunbond for n in numbers]
+        # unbondEn = 0
+        ## TODO: I am still unsure whether atoms or copyAts should be used here. 
+        for i, j, S in zip(*neighbor_list('ijS', atoms, cutoffs)):
+        # for i, j, S in zip(*neighbor_list('ijS', copyAts, cutoffs)):
             if i <= j:
                 # if i,j is bonded, skip this process
                 n1,n2,n3 = S
@@ -925,8 +938,9 @@ class GraphCalculator(Calculator):
                 if pair1 in pairs or pair2 in pairs:
                     # print("Skip")
                     continue
-                rsum = covalent_radii[numbers[i]] + covalent_radii[numbers[j]]
-                Dmax = (cunbond) * rsum
+                # rsum = covalent_radii[numbers[i]] + covalent_radii[numbers[j]]
+                rsum = rsumMat[i,j]
+                Dmax = cunbond * rsum
                 # print("Unbond")
                 # print(Dmax)
                 cells = np.dot(S, cell)
@@ -941,10 +955,14 @@ class GraphCalculator(Calculator):
                     # D = 1e-3
                 if D < Dmax:
                     energy += 0.5*k2*(D-Dmax)**2
+                    # just for test
+                    # unbondEn += 0.5*k2*(D-Dmax)**2
                     f = k2*(D-Dmax)*uvec
                     forces[i] += f
                     forces[j] -= f
                     stress += np.dot(f[np.newaxis].T, dvec[np.newaxis])
+        
+        # print("Unbond Energy: {}".format(unbondEn))
 
 
         # if mode == 1:

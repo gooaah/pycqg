@@ -28,7 +28,7 @@ if __name__ == "__main__":
     # print("Number of self loops: {}".format(QG.number_of_selfloops()))
     print("Number of parallel edges: {}".format(number_of_parallel_edges(QG)))
     print("Number of components: {}".format(nx.number_connected_components(QG)))
-    # print("Coordination Numbers: {}".format(list(degree.values())))
+    print("Coordination Numbers: {}".format(list(degree.values())))
 
 
     print("Component\tDimension")

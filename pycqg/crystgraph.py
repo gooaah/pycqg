@@ -464,7 +464,7 @@ def graph_embedding(graph):
     pos = np.concatenate(([[0,0,0]], pos))
     pos = np.array(pos)
     # remove little difference
-    pos[np.abs(pos)<1e-8] = 0
+    pos[np.abs(pos)<1e-4] = 0
     # solve offsets
     offsets = np.floor(pos).astype(np.int)
     pos -= offsets

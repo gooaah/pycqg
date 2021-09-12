@@ -3,6 +3,7 @@
 *.traj
 test*.py
 *_mp-*.cif
+*png
 
 # Byte-compiled / optimized / DLL files
 __pycache__/

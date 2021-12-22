@@ -593,12 +593,13 @@ class GraphCalculator(Calculator):
     I design the potential so that the following criteria are fulfilled when the potential energy equals zero:
     Suppose there are two atoms A, B. R_{AB} = r_{A} + r_{B} is the sum of covalent radius.
     If A,B are bonded, cmin <= d_{AB}/R_{AB} <= cmax.
-    If A,B are not bonded, cmax+cadd <= d_{AB}/R_{AB}.
+    If A,B are not bonded, cunbond <= d_{AB}/R_{AB}.
     """
     implemented_properties = ['energy', 'forces', 'stress']
     default_parameters = {
         'cmin': 0.5,
         'cmax': 1,
+        'cunbond': 1.05,
         'cadd': 0.,
         'k1': 1e-1,
         'k2': 1e-1,
@@ -619,13 +620,14 @@ class GraphCalculator(Calculator):
 
         cmax = self.parameters.cmax
         cmin = self.parameters.cmin
-        cadd = self.parameters.cadd
+        cunbond = self.parameters.cunbond
+        # cadd = self.parameters.cadd
         k1 = self.parameters.k1
         k2 = self.parameters.k2
         useGraphRatio = self.parameters.useGraphRatio
         ratioErr = self.parameters.ratioErr
         # mode = self.parameters.mode
-        cunbond = cmax + cadd
+        # cunbond = cmax + cadd
 
         # print(cadd)
 
@@ -727,7 +729,7 @@ class GraphCalculator(Calculator):
                     # print("Skip")
                     continue
                 rsum = covalent_radii[numbers[i]] + covalent_radii[numbers[j]]
-                Dmax = (cunbond) * rsum
+                Dmax = cunbond * rsum
                 # print("Unbond")
                 # print(Dmax)
                 cells = np.dot(S, cell)

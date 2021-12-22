@@ -1,7 +1,7 @@
 ## Crystal Quotient Graph
 from __future__ import print_function, division
 from functools import reduce
-from ase.neighborlist import neighbor_list, primitive_neighbor_list
+from ase.neighborlist import neighbor_list
 from ase.calculators.calculator import Calculator, all_changes
 from ase.optimize import BFGS, LBFGS, FIRE
 from ase.optimize.sciopt import SciPyFminBFGS, SciPyFminCG
@@ -10,7 +10,7 @@ from ase.data import covalent_radii
 import ase.io
 import networkx as nx
 import numpy as np
-import sys, itertools
+import sys, itertools, functools
 from math import gcd
 
 def quotient_graph(atoms, coef=1.1,):
@@ -110,11 +110,15 @@ def max_graph_dim(G):
     return maxDim
 
 def reduce_cycSums(cycSums):
+    """
+    Delete zero and duplicate vectors in the input cycle sum matrix.
+    (Transform the type of elements to int)
+    """
 
     csArr = cycSums.tolist()
     noZeroSum = []
     for cs in csArr:
-        cst = tuple(cs)
+        cst = tuple([int(n) for n in cs])
         if cst != (0,0,0):
             # if cst[0] < 0:
             if num_geq_zero(cst) < 2:
@@ -136,10 +140,81 @@ def num_geq_zero(vec):
 
     return n
 
+def get_basis(cycSums):
+    """
+    Get the basis of the cycle sum matrix and self-penetation multiplicity.
+    
+    Parameters:
+
+    cycSums: a matrix (Nx3)
+        cycle sum matrix
+
+    Returns:
+
+    basis: a matrix (Dx3)
+        basic vectors. D is the dimensionality or rank.
+    mult: int
+        self-penetation multiplicity
+    """
+
+    dim = np.linalg.matrix_rank(cycSums)
+    noZeroMat = reduce_cycSums(cycSums)
+
+
+    # multiplicity
+    mult = None
+    basis = None
+    if dim == 3: 
+        for comb in itertools.combinations(range(len(noZeroMat)), 3):
+            mat = noZeroMat[list(comb)]
+            m = abs(np.linalg.det(mat))
+            if mult and m > 1e-3 and m < mult: # avoid error led by float type
+                mult = int(m)
+                basis = mat
+            elif not mult:
+                mult = int(m)
+                basis = mat
+
+    elif dim == 2:
+        for comb in itertools.combinations(range(len(noZeroMat)), 2):
+            mat = noZeroMat[list(comb)]
+            # cross product of two vector
+            # convert to int for gcd
+            detRow = [int(i) for i in np.cross(mat[0], mat[1])]
+            m = functools.reduce(gcd, detRow)
+            if mult and m > 0 and m < mult: 
+                mult = m
+                basis = mat
+            elif not mult:
+                mult = m
+                basis = mat
+
+    elif dim == 1:
+        for row in noZeroMat.tolist():
+            mat = [int(i) for i in row]
+            m = functools.reduce(gcd, mat)
+            if mult and m > 0 and m < mult: 
+                mult = m
+                basis = mat
+            elif not mult:
+                mult = m
+                basis = mat
+
+    elif dim == 0:
+        basis = []
+        mult = 1
+
+    else:
+        raise RuntimeError("Please check the input matrix!")
+    
+    return basis, mult
+
+
+
+
 def getMult_3D(cycSums):
     """
     Return the self-penetration multiplicities of the 3D crystal quotient graph G.
-    G: networkx.MultiGraph
     Return: int
     """
     assert np.linalg.matrix_rank(cycSums) == 3
@@ -158,7 +233,6 @@ def getMult_3D(cycSums):
 def getMult_2D(cycSums):
     """
     Return the self-penetration multiplicities of the 2D crystal quotient graph G.
-    G: networkx.MultiGraph
     Return: int
     """
     assert np.linalg.matrix_rank(cycSums) == 2
@@ -178,7 +252,6 @@ def getMult_2D(cycSums):
 def getMult_1D(cycSums):
     """
     Return the self-penetration multiplicities of the 1D crystal quotient graph G.
-    G: networkx.MultiGraph
     Return: int
     """
     assert np.linalg.matrix_rank(cycSums) == 1
@@ -206,8 +279,9 @@ def number_of_parallel_edges(QG):
             numPE += 1
     return numPE
 
-def find_communities(QG):
+def find_communities_old1(QG):
     """
+    (Old version)
     Find communitis of crystal quotient graph QG using Girva_Newman algorithm.
     QG: networkx.MultiGraph
     Return: a list of networkx.MultiGraph
@@ -224,7 +298,7 @@ def find_communities(QG):
     partition = [list(p) for p in c]
     return partition
 
-def find_communities2(QG, maxStep=1000):
+def find_communities_old2(QG, maxStep=1000):
     """
     Find communitis of crystal quotient graph QG using Girva_Newman algorithm, slightly different from find_communities.
     QG: networkx.MultiGraph
@@ -256,13 +330,72 @@ def find_communities2(QG, maxStep=1000):
                 tmpG = reduce(nx.union, extendList)
                 break
 
+def find_communities(QG):
+    """
+    Find communitis of crystal quotient graph QG using Girva_Newman algorithm.
+    QG: networkx.MultiGraph
+    Return: a list of networkx.MultiGraph
+    """
+    tmpG = remove_selfloops(QG)
+    partition = []
+    # inputArr = list(nx.connected_component_subgraphs(tmpG))
+    inputArr = [tmpG.subgraph(comp).copy() for comp in nx.connected_components(tmpG)]
+    step = 0
+    while len(inputArr) > 0:
+        c = inputArr.pop()
+        compDim = graph_dim(c)
+        if compDim == 0:
+            partition.append(list(c.nodes()))
+            print("community 0D {}".format(c.nodes()))
+        else:
+            comp=nx.algorithms.community.girvan_newman(c)
+            step += 1
+            print("GN step {}".format(step))
+            for indices in next(comp):
+                print("{}D".format(compDim))
+                print(indices)
+                inputArr.append(tmpG.subgraph(indices))
+
+    return partition
+
+def find_communities_3D(QG):
+    """
+    Find communitis with dimensionality lower than 3 of crystal quotient graph QG using Girva_Newman algorithm.
+    QG: networkx.MultiGraph
+    Return: a list of networkx.MultiGraph
+    """
+    tmpG = remove_selfloops(QG)
+    partition = []
+    # inputArr = list(nx.connected_component_subgraphs(tmpG))
+    inputArr = [tmpG.subgraph(comp).copy() for comp in nx.connected_components(tmpG)]
+    step = 0
+    while len(inputArr) > 0:
+        c = inputArr.pop()
+        compDim = graph_dim(c)
+        if compDim < 3:
+            partition.append(list(c.nodes()))
+            # print("community {}D {}".format(compDim, c.nodes()))
+        else:
+            comp=nx.algorithms.community.girvan_newman(c)
+            step += 1
+            # print("{}D".format(compDim))
+            # print("GN step {}".format(step))
+            for indices in next(comp):
+                # print(indices)
+                inputArr.append(tmpG.subgraph(indices))
+
+    return partition
+
+
 def remove_selfloops(G):
     newG = G.copy()
-    loops = list(newG.selfloop_edges())
+    # loops = list(newG.selfloop_edges())
+    loops = list(nx.selfloop_edges(G))
     newG.remove_edges_from(loops)
     return newG
 
 def nodes_and_offsets(G):
+    assert nx.number_connected_components(G) == 1, "The graph should be connected!"
     offSets = []
     nodes = list(G.nodes())
     paths = nx.single_source_shortest_path(G, nodes[0])
@@ -404,6 +537,68 @@ def min_unbond_ratio(atoms, bondCoef):
 
     return curCoef
 
+def analyze_vacuum(lat, spos, QG):
+    """
+    Only for 2D layers. Compute the layer thickness and vacuum beteewn layers.
+
+    Parameters:
+    lat: (3x3) matrix
+        lattice matrix
+    spos: (Nx3) matrix
+        scaled positions
+    QG: graph with N nodes
+        quotient graph of the crystal defined by lat and spos
+
+    Returns:
+
+    """
+
+    # 2 basic vectors of the layer
+    comps = [QG.subgraph(comp).copy() for comp in nx.connected_components(QG)]
+    allBasis = []
+    for G in comps:
+        basis, _ = get_basis(cycle_sums(G))
+        allBasis.extend(basis)
+    assert np.linalg.matrix_rank(allBasis) == 2, "Must be a 2D structure and all the layers should be parallel."
+
+    # use the last basis, because all the layers are parallel.
+    a, b = basis
+    c = [int(i) for i in np.cross(a,b)]
+    # find the axis not perpendicular to c
+    nonZeroInd = np.nonzero(c)[0][0]
+
+    # stack direction perpendicular to the layer
+    stackVec = np.cross(np.dot(a,lat), np.dot(b,lat))
+    stackVec = stackVec/np.linalg.norm(stackVec)
+    stackLen = np.dot(lat[nonZeroInd], stackVec)
+    stackLen = abs(stackLen)
+
+    bottoms_tops = []
+    # get offset for every atom
+    for G in comps:
+        indices, offsets = nodes_and_offsets(G)
+        offsets = np.array(offsets)
+        pos = np.dot(offsets + spos[indices], lat)
+        # project the positions to the stack direction
+        proj = np.dot(pos, stackVec)
+        bottoms_tops.append((min(proj), max(proj)))
+        # thick = max(proj) - min(proj)
+        # vac = stackLen - thick
+    
+    bottoms_tops = sorted(bottoms_tops, key=lambda x:x[0])
+    btArr = np.array(bottoms_tops)
+    bottoms = btArr[:,0]
+    tops = btArr[:,1]
+    tmp = bottoms[0]
+    bottoms[:-1] = bottoms[1:]
+    bottoms[-1] = tmp
+    gaps = bottoms - tops
+    gaps[-1] += stackLen
+
+
+    return stackLen, bottoms_tops, gaps
+
+
 
 class CrystalGraph:
     def __init__(self, atoms, coef=1.1, buildQG=True):
@@ -436,26 +631,30 @@ class CrystalGraph:
         dims = []
         mults = []
         subGs = []
+        bases = []
         for comp in enumerate(nx.connected_components(self.graph)):
             subG = self.graph.subgraph(comp).copy()
             subGs.append(subG)
             cycSum = cycle_sums(subG)
             dim = np.linalg.matrix_rank(cycSum)
             dims.append(dim)
-            if dim == 3:
-                mult = getMult_3D(cycSum)
-            elif dim == 2:
-                mult = getMult_2D(cycSum)
-            elif dim == 1:
-                mult = getMult_1D(cycSum)
-            elif dim == 0:
-                mult = 1
+            # if dim == 3:
+            #     mult = getMult_3D(cycSum)
+            # elif dim == 2:
+            #     mult = getMult_2D(cycSum)
+            # elif dim == 1:
+            #     mult = getMult_1D(cycSum)
+            # elif dim == 0:
+            #     mult = 1
+            basis, mult = get_basis(cycSum)
             mults.append(mult)
+            bases.append(basis)
             # print("{}\t\t{}\t{}".format(i+1, dim, mut))
 
         self.dims = dims
         self.mults = mults
         self.subGs = subGs
+        self.bases = bases
 
 
 class GraphGenerator:
@@ -600,7 +799,7 @@ class GraphCalculator(Calculator):
         'cmin': 0.5,
         'cmax': 1,
         'cunbond': 1.05,
-        'cadd': 0.,
+        # 'cadd': 0.,
         'k1': 1e-1,
         'k2': 1e-1,
         # 'mode': 0,
@@ -629,6 +828,11 @@ class GraphCalculator(Calculator):
         # mode = self.parameters.mode
         # cunbond = cmax + cadd
 
+        # sums of radius
+        radArr = covalent_radii[atoms.get_atomic_numbers()]
+        radArr = np.expand_dims(radArr,1)
+        rsumMat = radArr + radArr.T
+
         # print(cadd)
 
         energy = 0.
@@ -640,8 +844,10 @@ class GraphCalculator(Calculator):
         ## offsets for all atoms
         spos = atoms.get_scaled_positions(wrap=False)
         # remove little difference
-        spos[np.abs(spos)<1e-4] = 0
+        # TODO: The operator (set zero) hinders optimization of CoAs2_mp-2715. But it is important for AgF2_mp-7715. It needs more test.
+        spos[np.abs(spos)<1e-8] = 0
         offsets = np.floor(spos).astype(np.int)
+        offsets = np.zeros_like(spos)
         # print(offsets[-1])
         # print(atoms.positions[-1,1])
         # if mode == 1:
@@ -661,12 +867,15 @@ class GraphCalculator(Calculator):
             #     n1, n2, n3 = edgeVec
             # elif mode == 0:
             edgeVec = data['vector']
+            ## TODO: Not sure whether offset is crucial
             n1, n2, n3 = offsets[j] - offsets[i] + data['vector']
+            # n1, n2, n3 = offsets[j] - offsets[i] + data['vector']
 
             # graph.edge[m][n][key]['vector'] = edgeVec
             graph[m][n][key]['vector'] = edgeVec
             pairs.append((i,j,n1,n2,n3))
-            rsum = covalent_radii[numbers[i]] + covalent_radii[numbers[j]]
+            # rsum = covalent_radii[numbers[i]] + covalent_radii[numbers[j]]
+            rsum = rsumMat[i,j]
             # Use ratio attached in graph or not
             if useGraphRatio:
                 ratio = data['ratio']
@@ -713,13 +922,16 @@ class GraphCalculator(Calculator):
         # Wraping atoms might lead to changing vector labels.
         # Thererfore, to avoid wraping positions, 
         # I copy a new atoms and get wrapped positions
-        copyAts = atoms.copy()
-        copyAts.wrap()
-        pos = copyAts.get_positions()
+        # copyAts = atoms.copy()
+        # copyAts.wrap()
+        # pos = copyAts.get_positions()
+        pos = atoms.get_positions()
         ## Consider unbonded atom pairs
-        cutoffs = [covalent_radii[n]*(cunbond+0.05) for n in numbers]
-        # for i, j, S in zip(*neighbor_list('ijS', atoms, cutoffs)):
-        for i, j, S in zip(*neighbor_list('ijS', copyAts, cutoffs)):
+        cutoffs = [covalent_radii[n]*cunbond for n in numbers]
+        # unbondEn = 0
+        ## TODO: I am still unsure whether atoms or copyAts should be used here. 
+        for i, j, S in zip(*neighbor_list('ijS', atoms, cutoffs)):
+        # for i, j, S in zip(*neighbor_list('ijS', copyAts, cutoffs)):
             if i <= j:
                 # if i,j is bonded, skip this process
                 n1,n2,n3 = S
@@ -728,7 +940,8 @@ class GraphCalculator(Calculator):
                 if pair1 in pairs or pair2 in pairs:
                     # print("Skip")
                     continue
-                rsum = covalent_radii[numbers[i]] + covalent_radii[numbers[j]]
+                # rsum = covalent_radii[numbers[i]] + covalent_radii[numbers[j]]
+                rsum = rsumMat[i,j]
                 Dmax = cunbond * rsum
                 # print("Unbond")
                 # print(Dmax)
@@ -744,10 +957,14 @@ class GraphCalculator(Calculator):
                     # D = 1e-3
                 if D < Dmax:
                     energy += 0.5*k2*(D-Dmax)**2
+                    # just for test
+                    # unbondEn += 0.5*k2*(D-Dmax)**2
                     f = k2*(D-Dmax)*uvec
                     forces[i] += f
                     forces[j] -= f
                     stress += np.dot(f[np.newaxis].T, dvec[np.newaxis])
+        
+        # print("Unbond Energy: {}".format(unbondEn))
 
 
         # if mode == 1:

@@ -2,7 +2,7 @@
 ## Crystal Quotient Graph
 from __future__ import print_function, division
 import ase.io
-from pycqg.crystgraph import quotient_graph, graph_dim, cycle_sums, getMult_3D, getMult_2D, getMult_1D, number_of_parallel_edges, max_graph_dim
+from pycqg.crystgraph import quotient_graph, graph_dim, cycle_sums, getMult_3D, getMult_2D, getMult_1D, number_of_parallel_edges, max_graph_dim, get_basis
 import networkx as nx
 import numpy as np
 import sys
@@ -28,7 +28,7 @@ if __name__ == "__main__":
     # print("Number of self loops: {}".format(QG.number_of_selfloops()))
     print("Number of parallel edges: {}".format(number_of_parallel_edges(QG)))
     print("Number of components: {}".format(nx.number_connected_components(QG)))
-    # print("Coordination Numbers: {}".format(list(degree.values())))
+    print("Coordination Numbers: {}".format(list(degree.values())))
 
 
     print("Component\tDimension")
@@ -44,14 +44,17 @@ if __name__ == "__main__":
     for i,subG in enumerate(nx.connected_components(QG)):
         subCS = cycle_sums(QG.subgraph(subG))
         dim = np.linalg.matrix_rank(subCS)
-        if dim == 3:
-            print("{}\t\t{}".format(i+1,getMult_3D(subCS)))
-        elif dim == 2:
-            print("{}\t\t{}".format(i+1,getMult_2D(subCS)))
-        elif dim == 1:
-            print("{}\t\t{}".format(i+1,getMult_1D(subCS)))
-        else:
-            print("{}\t\t1".format(i+1))
+        # if dim == 3:
+        #     print("{}\t\t{}".format(i+1,getMult_3D(subCS)))
+        # elif dim == 2:
+        #     print("{}\t\t{}".format(i+1,getMult_2D(subCS)))
+        # elif dim == 1:
+        #     print("{}\t\t{}".format(i+1,getMult_1D(subCS)))
+        # else:
+        #     print("{}\t\t1".format(i+1))
+        basis, mult = get_basis(subCS)
+        print("{}\t\t{}".format(i+1,mult))
+        # print(basis)
 
 
 

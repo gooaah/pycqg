@@ -805,6 +805,7 @@ class GraphCalculator(Calculator):
         # 'mode': 0,
         'useGraphRatio': False,
         'ratioErr': 0.1,
+        'ignorePairs': [], # pairs of ignored pairs of atomic numbers
     }
     def __init__(self, **kwargs):
         Calculator.__init__(self, **kwargs)
@@ -816,6 +817,7 @@ class GraphCalculator(Calculator):
         assert Nat == len(graph), "Number of atoms should equal number of nodes in the initial graph!"
 
         numbers = atoms.get_atomic_numbers()
+        unqNumber = set(numbers.tolist()) # unique atomic numbers
 
         cmax = self.parameters.cmax
         cmin = self.parameters.cmin
@@ -825,6 +827,7 @@ class GraphCalculator(Calculator):
         k2 = self.parameters.k2
         useGraphRatio = self.parameters.useGraphRatio
         ratioErr = self.parameters.ratioErr
+        ignorePairs = [tuple(sorted(p)) for p in self.parameters.ignorePairs]
         # mode = self.parameters.mode
         # cunbond = cmax + cadd
 
@@ -878,10 +881,12 @@ class GraphCalculator(Calculator):
             rsum = rsumMat[i,j]
             # Use ratio attached in graph or not
             if useGraphRatio:
-                ratio = data['ratio']
-                # cmax = ratio + ratioErr
-                cmax = ratio
-                cmin = ratio - ratioErr
+                # ratio = data['ratio']
+                # # cmax = ratio + ratioErr
+                # cmax = ratio
+                # cmin = ratio - ratioErr
+                cmin, cmax = data['ratios']
+                assert cmin < cmax, "cmin should be less than cmax!"
             Dmin = cmin * rsum
             Dmax = cmax * rsum
             # print("bond")
@@ -927,7 +932,11 @@ class GraphCalculator(Calculator):
         # pos = copyAts.get_positions()
         pos = atoms.get_positions()
         ## Consider unbonded atom pairs
-        cutoffs = [covalent_radii[n]*cunbond for n in numbers]
+        # cutoffs = [covalent_radii[n]*cunbond for n in numbers]
+        cutoffs = dict()
+        for num1, num2 in itertools.combinations_with_replacement(unqNumber,2):
+            if tuple(sorted([num1,num2])) not in ignorePairs:
+                cutoffs[(num1,num2)] = cunbond*(covalent_radii[num1]+covalent_radii[num2])
         # unbondEn = 0
         ## TODO: I am still unsure whether atoms or copyAts should be used here. 
         for i, j, S in zip(*neighbor_list('ijS', atoms, cutoffs)):

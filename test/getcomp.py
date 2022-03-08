@@ -1,8 +1,8 @@
 #!/usr/bin/env python
-## Crystal Quotient Graph
+## Get disconnected components
 from __future__ import print_function, division
 import ase.io
-from pycqg.crystgraph import quotient_graph, graph_dim, cycle_sums, getMult_3D, getMult_2D, getMult_1D, number_of_parallel_edges, max_graph_dim, nodes_and_offsets
+from pycqg.crystgraph import quotient_graph, graph_dim, max_graph_dim, nodes_and_offsets
 import networkx as nx
 import numpy as np
 import sys

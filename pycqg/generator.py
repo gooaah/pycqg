@@ -6,7 +6,8 @@ from ase.optimize.sciopt import SciPyFminBFGS, SciPyFminCG
 from ase.constraints import UnitCellFilter, ExpCellFilter, StrainFilter
 from ase.data import covalent_radii
 import networkx as nx
-from .crystgraph import graph_dim, graph_embedding, GraphCalculator
+from .crystgraph import graph_dim, graph_embedding
+from .calculator import GraphCalculator
 
 class GraphGenerator:
     def __init__(self):

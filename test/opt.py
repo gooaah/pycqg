@@ -6,7 +6,8 @@ from ase import Atoms
 from ase.optimize import BFGS, FIRE
 from ase.optimize.sciopt import SciPyFminBFGS, SciPyFminCG
 from ase.constraints import UnitCellFilter, ExpCellFilter, StrainFilter
-from pycqg.crystgraph import GraphCalculator, graph_embedding, edge_ratios
+from pycqg.crystgraph import graph_embedding, edge_ratios
+from pycqg.calculator import GraphCalculator
 from pycqg.generator import GraphGenerator
 import networkx as nx
 import numpy as np

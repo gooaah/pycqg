@@ -279,113 +279,6 @@ def number_of_parallel_edges(QG):
             numPE += 1
     return numPE
 
-def find_communities_old1(QG):
-    """
-    (Old version)
-    Find communitis of crystal quotient graph QG using Girva_Newman algorithm.
-    QG: networkx.MultiGraph
-    Return: a list of networkx.MultiGraph
-    """
-    tmpG = remove_selfloops(QG)
-    comp=nx.algorithms.community.girvan_newman(tmpG)
-    for c in comp:
-        SGs = [tmpG.subgraph(indices) for indices in c]
-        dims = [np.linalg.matrix_rank(cycle_sums(SG)) for SG in SGs]
-        sumDim = sum(dims)
-        if sumDim == 0:
-            break
-
-    partition = [list(p) for p in c]
-    return partition
-
-def find_communities_old2(QG, maxStep=1000):
-    """
-    Find communitis of crystal quotient graph QG using Girva_Newman algorithm, slightly different from find_communities.
-    QG: networkx.MultiGraph
-    Return: a list of networkx.MultiGraph
-    """
-    tmpG = remove_selfloops(QG)
-    partition = []
-    for _ in range(maxStep):
-        comp=nx.algorithms.community.girvan_newman(tmpG)
-        for c in comp:
-            extendList = []
-            sumDim = 0
-            dims = []
-            # print("c: {}".format(sorted(c)))
-            for indices in c:
-                SG = tmpG.subgraph(indices)
-                dim = np.linalg.matrix_rank(cycle_sums(SG))
-                sumDim += dim
-                dims.append(dim)
-                if dim == 0:
-                    partition.append(list(indices))
-                else:
-                    extendList.append(tmpG.subgraph(indices))
-            if sumDim == 0:
-                return partition
-            # print("dims:{}".format(dims))
-
-            if len(extendList) > 0:
-                tmpG = reduce(nx.union, extendList)
-                break
-
-def find_communities(QG):
-    """
-    Find communitis of crystal quotient graph QG using Girva_Newman algorithm.
-    QG: networkx.MultiGraph
-    Return: a list of networkx.MultiGraph
-    """
-    tmpG = remove_selfloops(QG)
-    partition = []
-    # inputArr = list(nx.connected_component_subgraphs(tmpG))
-    inputArr = [tmpG.subgraph(comp).copy() for comp in nx.connected_components(tmpG)]
-    step = 0
-    while len(inputArr) > 0:
-        c = inputArr.pop()
-        compDim = graph_dim(c)
-        if compDim == 0:
-            partition.append(list(c.nodes()))
-            print("community 0D {}".format(c.nodes()))
-        else:
-            comp=nx.algorithms.community.girvan_newman(c)
-            step += 1
-            print("GN step {}".format(step))
-            for indices in next(comp):
-                print("{}D".format(compDim))
-                print(indices)
-                inputArr.append(tmpG.subgraph(indices))
-
-    return partition
-
-def find_communities_3D(QG):
-    """
-    Find communitis with dimensionality lower than 3 of crystal quotient graph QG using Girva_Newman algorithm.
-    QG: networkx.MultiGraph
-    Return: a list of networkx.MultiGraph
-    """
-    tmpG = remove_selfloops(QG)
-    partition = []
-    # inputArr = list(nx.connected_component_subgraphs(tmpG))
-    inputArr = [tmpG.subgraph(comp).copy() for comp in nx.connected_components(tmpG)]
-    step = 0
-    while len(inputArr) > 0:
-        c = inputArr.pop()
-        compDim = graph_dim(c)
-        if compDim < 3:
-            partition.append(list(c.nodes()))
-            # print("community {}D {}".format(compDim, c.nodes()))
-        else:
-            comp=nx.algorithms.community.girvan_newman(c)
-            step += 1
-            # print("{}D".format(compDim))
-            # print("GN step {}".format(step))
-            for indices in next(comp):
-                # print(indices)
-                inputArr.append(tmpG.subgraph(indices))
-
-    return partition
-
 
 def remove_selfloops(G):
     newG = G.copy()
@@ -395,6 +288,11 @@ def remove_selfloops(G):
     return newG
 
 def nodes_and_offsets(G):
+    """
+    Look for the cell offsets connected to the atom a0(0,0,0).
+    a0(0,0,0) is the first atom in cell (0,0,0)
+    Usually it only makes sense for 0D sturctures.
+    """
     assert nx.number_connected_components(G) == 1, "The graph should be connected!"
     offSets = []
     nodes = list(G.nodes())
@@ -419,27 +317,6 @@ def nodes_and_offsets(G):
             offSets.append(offSet.tolist())
     return nodes, offSets
 
-def search_edges(indices, coords, pairs):
-    """
-    search for edges so that coordination numbers are fulfilled.
-    """
-    assert len(indices) == len(pairs)
-    edges = []
-    edgeInds = []
-    curCoords = np.array(coords)
-    for ind in indices:
-        m,n,_,_,_ = pairs[ind]
-        if (curCoords == 0).all():
-            break
-        if curCoords[m] > 0 and curCoords[n] > 0:
-            edges.append(pairs[ind])
-            edgeInds.append(ind)
-            curCoords[m] -= 1
-            curCoords[n] -= 1
-    if (curCoords == 0).all():
-        return edges, edgeInds
-    else:
-        return None, None
 
 def graph_embedding(graph):
     """
@@ -516,87 +393,6 @@ def edge_ratios(graph):
 
     return np.array(ratios)
 
-def min_unbond_ratio(atoms, bondCoef):
-    """
-    Compute min distance ration for unbonded atom pairs
-    atoms: ASE's Atoms object, the input structure
-    bondCoef: same to coef in quotient_graph(), the cutoff parameter
-    """
-    # assert bondCoef < maxCoef, "Bonded ratios should be less than unbonded ratios."
-    maxCoef = bondCoef + 1
-    curCoef = maxCoef
-    cutoffs = [covalent_radii[number]*maxCoef for number in atoms.get_atomic_numbers()]
-    radius = [covalent_radii[number] for number in atoms.get_atomic_numbers()]
-
-    for i, j, d in zip(*neighbor_list('ijd', atoms, cutoffs)):
-        if i <= j:
-            rsum = radius[i] + radius[j]
-            ratio = d/rsum # bond parameter
-            if bondCoef < ratio < curCoef:
-                curCoef = ratio
-
-    return curCoef
-
-def analyze_vacuum(lat, spos, QG):
-    """
-    Only for 2D layers. Compute the layer thickness and vacuum beteewn layers.
-
-    Parameters:
-    lat: (3x3) matrix
-        lattice matrix
-    spos: (Nx3) matrix
-        scaled positions
-    QG: graph with N nodes
-        quotient graph of the crystal defined by lat and spos
-
-    Returns:
-
-    """
-
-    # 2 basic vectors of the layer
-    comps = [QG.subgraph(comp).copy() for comp in nx.connected_components(QG)]
-    allBasis = []
-    for G in comps:
-        basis, _ = get_basis(cycle_sums(G))
-        allBasis.extend(basis)
-    assert np.linalg.matrix_rank(allBasis) == 2, "Must be a 2D structure and all the layers should be parallel."
-
-    # use the last basis, because all the layers are parallel.
-    a, b = basis
-    c = [int(i) for i in np.cross(a,b)]
-    # find the axis not perpendicular to c
-    nonZeroInd = np.nonzero(c)[0][0]
-
-    # stack direction perpendicular to the layer
-    stackVec = np.cross(np.dot(a,lat), np.dot(b,lat))
-    stackVec = stackVec/np.linalg.norm(stackVec)
-    stackLen = np.dot(lat[nonZeroInd], stackVec)
-    stackLen = abs(stackLen)
-
-    bottoms_tops = []
-    # get offset for every atom
-    for G in comps:
-        indices, offsets = nodes_and_offsets(G)
-        offsets = np.array(offsets)
-        pos = np.dot(offsets + spos[indices], lat)
-        # project the positions to the stack direction
-        proj = np.dot(pos, stackVec)
-        bottoms_tops.append((min(proj), max(proj)))
-        # thick = max(proj) - min(proj)
-        # vac = stackLen - thick
-    
-    bottoms_tops = sorted(bottoms_tops, key=lambda x:x[0])
-    btArr = np.array(bottoms_tops)
-    bottoms = btArr[:,0]
-    tops = btArr[:,1]
-    tmp = bottoms[0]
-    bottoms[:-1] = bottoms[1:]
-    bottoms[-1] = tmp
-    gaps = bottoms - tops
-    gaps[-1] += stackLen
-
-
-    return stackLen, bottoms_tops, gaps
 
 
 
@@ -655,136 +451,6 @@ class CrystalGraph:
         self.mults = mults
         self.subGs = subGs
         self.bases = bases
-
-
-class GraphGenerator:
-    def __init__(self):
-        pass
-
-    def build_graph(self, atoms, coords, dim=None, maxtry=50, randGen=False):
-        """
-        Build QG from atoms.
-        atoms: (ASE.Atoms) the input crystal structure.
-        coords: a list containing coordination numbers for all atoms.
-        dim: int or None, the target dimension. If None, do not restrict dimension.
-        maxtry: max try times
-        randGen: If True, randomly generate quotient graph when direct generation fails
-        """
-        self.originAtoms = atoms
-        assert sum(coords)%2 == 0, "Sum of coordination numbers should be even number!"
-        Nat = len(atoms)
-        assert Nat == len(coords), "coords and atoms should have same length!"
-        cell = np.array(atoms.get_cell())
-        pos = atoms.get_positions()
-        numbers = atoms.get_atomic_numbers()
-        ## Calculate relative vectors between different atoms in the same cell, and save the indices and cell offset, and sum of covalent radius
-        disp = []
-        pair = []
-        rsum = []
-        for m,n in itertools.combinations(range(Nat), 2):
-            disp.append(pos[n] - pos[m])
-            pair.append([m,n,0,0,0])
-            rsum.append(covalent_radii[numbers[m]] + covalent_radii[numbers[n]])
-        inDisp = np.array(disp)
-        inPair = np.array(pair)
-        inRsum = rsum[:]
-        ## Calculate relative vectors between atoms in the origin cell and atoms in the surrounding 3x3x3 supercell
-        negative_vec = lambda vec: tuple([-1*el for el in vec])
-        duplicate = []
-        for offset in itertools.product(range(-1, 2),range(-1, 2),range(-1, 2)):
-            if offset != (0,0,0):
-                cellDisp = np.dot(offset, cell)
-                if Nat > 1:
-                    newDisp = inDisp + cellDisp
-                    newPair = inPair.copy()
-                    newPair[:,2:5] = offset
-                    disp.extend(list(newDisp))
-                    pair.extend(newPair.tolist())
-                    rsum.extend(inRsum)
-                ## Consider equivalent atoms in two different cells
-                if negative_vec(offset) not in duplicate:
-                    duplicate.append(offset)
-                    for ii in range(Nat):
-                        disp.append(cellDisp)
-                        pair.append([ii, ii, offset[0], offset[1], offset[2]])
-                        rsum.append(2*covalent_radii[numbers[ii]])
-
-        disp = np.array(disp)
-        D = np.linalg.norm(disp, axis=1)
-        ratio = D/rsum
-        self.disp = disp
-        self.pair = pair
-        self.D = D
-        self.ratio = ratio
-
-        sortInd = np.argsort(ratio)
-
-        ## Search for optimal connectivity
-        edges, edgeInds = search_edges(sortInd, coords, pair)
-
-        G = nx.MultiGraph()
-        for i in range(Nat):
-            G.add_node(i)
-
-        if edges is not None:
-            for edge, ind in zip(edges, edgeInds):
-                m,n,i,j,k = edge
-                G.add_edge(m,n, vector=[i,j,k], direction=(m,n), ratio=ratio[ind])
-
-            self.randG = G
-            if nx.number_connected_components(G) == 1:
-                if dim is not None:
-                    if graph_dim(G) == dim:
-                        return G
-                else:
-                    return G
-
-        ## If we cannot build the graph, we choose the edges randomly
-        # raise NotImplementedError("Random generation has never been implemented!")
-        print("Cannot build quotient graph directly.")
-        if not randGen:
-            return None
-
-        print("Try to build graph randomly.")
-        for _ in range(maxtry):
-            randInd = sortInd[:]
-            np.random.shuffle(randInd)
-            edges, edgeInds = search_edges(randInd, coords, pair)
-            if edges is not None:
-                G.remove_edges_from(list(G.edges()))
-                for edge, ind in zip(edges, edgeInds):
-                    m,n,i,j,k = edge
-                    G.add_edge(m,n, vector=[i,j,k], direction=(m,n), ratio=ratio[ind])
-
-                    self.randG = G
-                    if nx.number_connected_components(G) == 1:
-                        if dim is not None:
-                            if graph_dim(G) == dim:
-                                return G
-                        else:
-                            return G
-
-        print("Fail in generating quotient graph.")
-        return None
-
-    def optimize(self, calcParm, driver, optParm, standardize=False):
-        """
-        Optimize structure according to the quotient graph.
-        calcParm: dict, parameters of GraphCalculator
-        driver: optimization driver, such as ase.optimize.BFGS
-        optParm: dict, parameters of optimization driver
-        standardize: If True, change the scaled positions of atoms to standard placement before optimization.
-        """
-        graph = self.randG
-        atoms = self.originAtoms.copy()
-
-        if standardize:
-            standPos, graph = graph_embedding(graph)
-            atoms.set_scaled_positions(standPos)
-
-        calc = GraphCalculator(**calcParm)
-        atoms.set_calculator(calc)
-        atoms.info['graph'] = graph.copy()
 
 class GraphCalculator(Calculator):
     """

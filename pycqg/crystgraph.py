@@ -567,7 +567,6 @@ class GraphCalculator(Calculator):
             Dmin = cmin * rsum
             Dmax = cmax * rsum
             # print("bond")
-            # print(Dmax)
             cells = np.dot(edgeVec, cell)
             dvec = pos[j] + cells - pos[i]
             D = np.linalg.norm(dvec)
@@ -584,13 +583,13 @@ class GraphCalculator(Calculator):
                     # scalD = (D-Dmin)/rsum
                     # energy += 0.5*k1*scalD**2
                     # f = k1*scalD*uvec/rsum
-                    energy += 0.5*k1*(D-Dmin)**2
+                    energy += 0.5*data['k']*(D-Dmin)**2
                     f = data['k']*(D-Dmin)*uvec
                 elif D > Dmax:
                     # scalD = (D-Dmax)/rsum
                     # energy += 0.5*k1*scalD**2
                     # f = k1*scalD*uvec/rsum
-                    energy += 0.5*k1*(D-Dmax)**2
+                    energy += 0.5*data['k']*(D-Dmax)**2
                     f = data['k']*(D-Dmax)*uvec
                 # elif D <= 1e-3: # when the distance is too small
                 #     energy += 0.5*k1*(D-Dmin)**2

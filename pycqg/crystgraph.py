@@ -804,7 +804,8 @@ class GraphCalculator(Calculator):
         'k2': 1e-1,
         # 'mode': 0,
         'useGraphRatio': False,
-        'ratioErr': 0.1,
+        'useGraphK': False,
+        # 'ratioErr': 0.1,
         'ignorePairs': [], # pairs of ignored pairs of atomic numbers
     }
     def __init__(self, **kwargs):
@@ -812,7 +813,7 @@ class GraphCalculator(Calculator):
 
     def calculate(self, atoms=None, properties=['energy'], system_changes=all_changes):
         # Calculator.calculate(self, atoms, properties, system_changes)
-        graph = atoms.info['graph']
+        graph = atoms.info['graph'].copy()
         Nat = len(atoms)
         assert Nat == len(graph), "Number of atoms should equal number of nodes in the initial graph!"
 
@@ -826,7 +827,8 @@ class GraphCalculator(Calculator):
         k1 = self.parameters.k1
         k2 = self.parameters.k2
         useGraphRatio = self.parameters.useGraphRatio
-        ratioErr = self.parameters.ratioErr
+        useGraphK = self.parameters.useGraphK
+        # ratioErr = self.parameters.ratioErr
         ignorePairs = [tuple(sorted(p)) for p in self.parameters.ignorePairs]
         # mode = self.parameters.mode
         # cunbond = cmax + cadd
@@ -835,6 +837,15 @@ class GraphCalculator(Calculator):
         radArr = covalent_radii[atoms.get_atomic_numbers()]
         radArr = np.expand_dims(radArr,1)
         rsumMat = radArr + radArr.T
+
+        # set string constant
+        if useGraphK:
+            pass
+        else:
+            for edge in graph.edges(data=True, keys=True):
+                m,n, key, data = edge
+                graph[m][n][key]['k'] = k1
+
 
         # print(cadd)
 
@@ -908,13 +919,13 @@ class GraphCalculator(Calculator):
                     # energy += 0.5*k1*scalD**2
                     # f = k1*scalD*uvec/rsum
                     energy += 0.5*k1*(D-Dmin)**2
-                    f = k1*(D-Dmin)*uvec
+                    f = data['k']*(D-Dmin)*uvec
                 elif D > Dmax:
                     # scalD = (D-Dmax)/rsum
                     # energy += 0.5*k1*scalD**2
                     # f = k1*scalD*uvec/rsum
                     energy += 0.5*k1*(D-Dmax)**2
-                    f = k1*(D-Dmax)*uvec
+                    f = data['k']*(D-Dmax)*uvec
                 # elif D <= 1e-3: # when the distance is too small
                 #     energy += 0.5*k1*(D-Dmin)**2
                 #     dvec = np.random.rand(3)

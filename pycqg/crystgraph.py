@@ -431,7 +431,7 @@ class CrystalGraph:
     def __init__(self, atoms, coef=1.1, buildQG=True):
         """
         atoms: (ASE.Atoms) the input crystal structure.
-        coef: (float) the criterion for connecting two atoms. If d_{AB} < coef*（r_A + r_B), atoms A and B are regarded as connected. r_A and r_B are covalent radius of A,B.
+        coef: (float) the criterion for connecting two atoms. If d_{AB} < coef*(r_A + r_B), atoms A and B are regarded as connected. r_A and r_B are covalent radius of A,B.
         buildQG: If it is true, build quotient graph using atoms and coef.
         """
         self.atoms = atoms

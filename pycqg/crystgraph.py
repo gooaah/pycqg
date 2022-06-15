@@ -2,15 +2,13 @@
 from __future__ import print_function, division
 from functools import reduce
 from ase.neighborlist import neighbor_list
-from ase.optimize import BFGS, LBFGS, FIRE
-from ase.optimize.sciopt import SciPyFminBFGS, SciPyFminCG
-from ase.constraints import UnitCellFilter, ExpCellFilter, StrainFilter
 from ase.data import covalent_radii
 import ase.io
 import networkx as nx
 import numpy as np
 import sys, itertools, functools
 from math import gcd
+from sympy import symbols, Matrix, solve_linear_system_LU
 
 def quotient_graph(atoms, coef=1.1,):
     """
@@ -341,6 +339,7 @@ def graph_embedding(graph):
     pos = np.array(pos)
     # remove little difference
     pos[np.abs(pos)<1e-4] = 0
+    print(pos)
     # solve offsets
     offsets = np.floor(pos).astype(np.int)
     pos -= offsets
@@ -388,8 +387,31 @@ def sym_graph_embedding(graph):
     assert nx.number_connected_components(graph) == 1, "The input graph should be connected!"
 
     if len(graph) == 1:
-        return np.array([[0,0,0]]), graph
+        return [0,0,0]
 
+    ## Laplacian Matrix
+    lapMat = nx.laplacian_matrix(graph).todense()
+    # invLap = np.linalg.inv(lapMat[1:,1:])
+    sMat = np.zeros((len(graph), 3), dtype=np.int8)
+    for edge in graph.edges(data=True):
+        _,_,data = edge
+        i,j = data['direction']
+        sMat[i] += data['vector']
+        sMat[j] -= data['vector']
+    
+    xs = symbols(f"x1:{len(graph)}")
+    coefs = lapMat[1:,1:]
+    posArr = []
+    for ax in range(3):
+        matrix = Matrix(np.concatenate((coefs, sMat[1:,ax:ax+1]),axis=1))
+        res = solve_linear_system_LU(matrix, xs)
+        posArr.append([res[key] for key in xs])
+        print(f'Axis {ax}')
+        print(res)
+    
+    return posArr
+    # return res
+    # print(sMat)
 
 def edge_ratios(graph):
     """

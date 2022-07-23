@@ -3,14 +3,15 @@ from __future__ import print_function, division
 from functools import reduce
 from ase.neighborlist import neighbor_list
 from ase.data import covalent_radii
-import ase.io
+# import ase.io
 import networkx as nx
 import numpy as np
 import sys, itertools, functools
 from math import gcd
-from sympy import symbols, Matrix, solve_linear_system_LU
+from sympy import symbols, Matrix, solve_linear_system_LU, zeros
+from collections import deque
 
-def quotient_graph(atoms, coef=1.1,):
+def quotient_graph(atoms, coef=1.1, add_ratio=False):
     """
     Return crystal quotient graph of the atoms.
     atoms: (ASE.Atoms) the input crystal structure
@@ -29,7 +30,10 @@ def quotient_graph(atoms, coef=1.1,):
         if i <= j:
             rsum = radius[i] + radius[j]
             ratio = d/rsum # bond parameter
-            G.add_edge(i,j, vector=S, direction=(i,j), ratio=ratio)
+            if add_ratio:
+                G.add_edge(i,j, vector=S, direction=(i,j), ratio=ratio)
+            else:
+                G.add_edge(i,j, vector=S, direction=(i,j))
 
     return G
 
@@ -315,7 +319,7 @@ def nodes_and_offsets(G):
     return nodes, offSets
 
 
-def graph_embedding(graph):
+def graph_embedding(graph, wrap=True):
     """
     standard embedding of quotient graph.
     return scaled positions and modified graph
@@ -339,17 +343,18 @@ def graph_embedding(graph):
     pos = np.array(pos)
     # remove little difference
     pos[np.abs(pos)<1e-4] = 0
-    print(pos)
-    # solve offsets
-    offsets = np.floor(pos).astype(np.int)
-    pos -= offsets
+    # print(pos)
     newG = graph.copy()
-    for edge in newG.edges(data=True, keys=True):
-        m,n, key, data = edge
-        i,j = data['direction']
-        ## modify the quotient graph according to offsets
-        # newG.edge[m][n][key]['vector'] = offsets[j] - offsets[i] + data['vector']
-        newG[m][n][key]['vector'] = offsets[j] - offsets[i] + data['vector']
+    if wrap:
+    # solve offsets
+        offsets = np.floor(pos).astype(np.int)
+        pos -= offsets
+        for edge in newG.edges(data=True, keys=True):
+            m,n, key, data = edge
+            i,j = data['direction']
+            ## modify the quotient graph according to offsets
+            # newG.edge[m][n][key]['vector'] = offsets[j] - offsets[i] + data['vector']
+            newG[m][n][key]['vector'] = offsets[j] - offsets[i] + data['vector']
 
     return pos, newG
 
@@ -385,33 +390,174 @@ def sym_graph_embedding(graph):
     Return positions are composed by excat integer and fractional numbers
     """
     assert nx.number_connected_components(graph) == 1, "The input graph should be connected!"
-
-    if len(graph) == 1:
+   
+    N = len(graph) # Numeber of atoms
+    if N == 1:
         return [0,0,0]
 
     ## Laplacian Matrix
     lapMat = nx.laplacian_matrix(graph).todense()
     # invLap = np.linalg.inv(lapMat[1:,1:])
-    sMat = np.zeros((len(graph), 3), dtype=np.int8)
+    sMat = np.zeros((N, 3), dtype=np.int8)
     for edge in graph.edges(data=True):
         _,_,data = edge
         i,j = data['direction']
         sMat[i] += data['vector']
         sMat[j] -= data['vector']
     
-    xs = symbols(f"x1:{len(graph)}")
+    xs = symbols(f"x1:{N}")
     coefs = lapMat[1:,1:]
-    posArr = []
+    posArr = zeros(N,3)
     for ax in range(3):
         matrix = Matrix(np.concatenate((coefs, sMat[1:,ax:ax+1]),axis=1))
         res = solve_linear_system_LU(matrix, xs)
-        posArr.append([res[key] for key in xs])
-        print(f'Axis {ax}')
-        print(res)
+        for i in range(N-1):
+            posArr[i+1,ax] = res[xs[i]]
+        # posArr.append([res[key] for key in xs])
+        # print(f'Axis {ax}')
+        # print(res)
     
     return posArr
     # return res
     # print(sMat)
+
+# These two functions are adapted from Networkx
+#===================
+def _generic_bfs_edges(G, source, neighbors=None, depth_limit=None, sort_neighbors=None):
+    """
+    from NetworkX's generic_bfs_edges, but slightly change sort_neighbors
+    """
+    if callable(sort_neighbors):
+        _neighbors = neighbors
+        neighbors = lambda node: iter(sort_neighbors(_neighbors(node), node))
+
+    visited = {source}
+    if depth_limit is None:
+        depth_limit = len(G)
+    queue = deque([(source, depth_limit, neighbors(source))])
+    while queue:
+        parent, depth_now, children = queue[0]
+        try:
+            child = next(children)
+            if child not in visited:
+                yield parent, child
+                visited.add(child)
+                if depth_now > 1:
+                    queue.append((child, depth_now - 1, neighbors(child)))
+        except StopIteration:
+            queue.popleft()
+
+
+
+def _bfs_edges(G, source, reverse=False, depth_limit=None, sort_neighbors=None):
+    """
+    from NetworkX's bfs_edges, but use _generic_bfs_edges instead
+    """
+    if reverse and G.is_directed():
+        successors = G.predecessors
+    else:
+        successors = G.neighbors
+    yield from _generic_bfs_edges(G, source, successors, depth_limit, sort_neighbors)
+#===================
+
+
+def bfs_sorting(atoms, graph):
+    """
+    Get all the permutations based on canonical forms and BFS.
+    Return `len(atoms)` permutations.
+    """
+    assert len(atoms) == graph.number_of_nodes(), "The number of atoms should equal to number of nodes in graph!"
+    assert nx.number_connected_components(graph) == 1, "The graph should be connected!"
+
+
+    N = len(atoms)
+    baryPos = sym_graph_embedding(graph)
+    realPos = atoms.get_scaled_positions()
+    realPos -= realPos[0] # make translation so that the first atomic position is (0,0,0)
+    diffPos = realPos - np.array(baryPos).astype(realPos.dtype)
+
+    # graph preprocessing
+    # G = remove_selfloops(graph)
+    G = nx.Graph(remove_selfloops(graph))
+    # print(G.edges())
+
+    # sort func
+    def cmp_vec(a, b):
+        """
+        Compare two vectors by lexicographical order
+        """
+        
+        if a[0] < b[0]:
+            return -1
+        elif a[0] > b[0]:
+            return 1
+        elif a[1] < b[1]:
+            return -1
+        elif a[1] > b[1]:
+            return 1
+        elif a[2] < b[2]:
+            return -1
+        elif a[2] > b[2]:
+            return 1
+        else :
+            return 0
+
+        
+    def sort_func(neighbors, s):
+        """
+        Sort neighbors.
+        s: source
+        """
+        nei = list(neighbors)
+        # from random import shuffle
+        # shuffle(nei)
+        # print(nei)
+        allD = {}
+        # print(nei, s)
+        for i in nei:
+            # Compare displacements of parallel edges, choose the one with minimal elements
+            minD = Matrix([2,2,2])
+            edges = graph[s][i]
+            for _, val in edges.items():
+                vec = val['vector']
+                if val['direction'] == (s,i):
+                    D = baryPos.row(i) - baryPos.row(s) + Matrix([[int(v) for v in vec]])
+                else:
+                    D = baryPos.row(i) - baryPos.row(s) - Matrix([[int(v) for v in vec]])
+                if cmp_vec(D,minD) == -1:
+                    minD = D
+            allD[i] = minD
+        # print(allD)
+        
+        def cmp_neighbors(m,n):
+            """
+            Compare two atoms.
+            Firstly compare their barycentric position
+            If they are same, then compare diffPos
+            """
+            baryCmp = cmp_vec(allD[m], allD[n])
+            if baryCmp == 0:
+                return cmp_vec(diffPos[m], diffPos[n])
+            else:
+                return baryCmp
+
+        # sort neighbors
+        # print(cmp_neighbors(nei[0], nei[1]))
+        _nei = sorted(nei, key=functools.cmp_to_key(cmp_neighbors))
+        # print(_nei)
+        return _nei
+
+    # BFS traversal
+    permArr = []
+    for s in range(N):
+        # set source as s
+        edges = _bfs_edges(G, s, sort_neighbors=sort_func)
+        # edges = nx.bfs_edges(G,s)
+        perm = [s] + [v for u, v in edges]
+        # print(perm)
+        permArr.append(perm)
+
+    return permArr
 
 def edge_ratios(graph):
     """

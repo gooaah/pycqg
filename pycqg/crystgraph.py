@@ -358,11 +358,12 @@ def graph_embedding(graph, wrap=True):
 
     return pos, newG
 
-def barycenter_disp(atoms, graph):
+def barycenter_disp(atoms, graph, selfloop=True):
     """
     Compute the displacement of every atom from the barycenter of neighboring atoms.
     atoms: ASE Atoms object, the structure
     graph: the quotient graph related to atoms
+    selfloop: consider self loops in the quotient graph or not
     """
 
     assert len(atoms) == graph.number_of_nodes(), "The number of atoms should equal to number of nodes in graph!"
@@ -371,13 +372,18 @@ def barycenter_disp(atoms, graph):
     # Sum of neighboring positions
     sumPos = np.zeros_like(pos)
     degrees = np.zeros(len(atoms))
-    for edge in graph.edges(data=True):
+    if selfloop:
+        G = graph
+    else:
+        G = remove_selfloops(graph)
+    for edge in G.edges(data=True):
         _,_,data = edge
         i,j = data['direction']
         sumPos[i] += pos[j] + data['vector']
         sumPos[j] += pos[i] - data['vector']
         degrees[i] += 1
         degrees[j] += 1
+
     
     barycenters = sumPos / np.expand_dims(degrees,1)
     disp = pos - barycenters
@@ -472,9 +478,10 @@ def bfs_sorting(atoms, graph):
 
     N = len(atoms)
     baryPos = sym_graph_embedding(graph)
-    realPos = atoms.get_scaled_positions()
-    realPos -= realPos[0] # make translation so that the first atomic position is (0,0,0)
-    diffPos = realPos - np.array(baryPos).astype(realPos.dtype)
+    # realPos = atoms.get_scaled_positions()
+    # realPos -= realPos[0] # make translation so that the first atomic position is (0,0,0)
+    # diffPos = realPos - np.array(baryPos).astype(realPos.dtype)
+    diffPos = barycenter_disp(atoms, graph, selfloop=False)
 
     # graph preprocessing
     # G = remove_selfloops(graph)
@@ -537,7 +544,15 @@ def bfs_sorting(atoms, graph):
             """
             baryCmp = cmp_vec(allD[m], allD[n])
             if baryCmp == 0:
-                return cmp_vec(diffPos[m], diffPos[n])
+                # return cmp_vec(diffPos[m], diffPos[n])
+
+                diff = diffPos[m] - diffPos[n]
+                # print(diff)
+                # print(diff[~np.isclose(diffPos[m],diffPos[n])])
+                if diff[~np.isclose(diffPos[m],diffPos[n])][0] < 0:
+                    return -1
+                else:
+                    return 1
             else:
                 return baryCmp
 

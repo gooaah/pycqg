@@ -8,8 +8,11 @@ import networkx as nx
 import numpy as np
 import sys, itertools, functools
 from math import gcd
-from sympy import symbols, Matrix, solve_linear_system_LU, zeros
+# from sympy import symbols, Matrix, solve_linear_system_LU, zeros, floor
+import sympy as sp
 from collections import deque
+
+from yaml import Mark
 
 def quotient_graph(atoms, coef=1.1, add_ratio=False):
     """
@@ -411,12 +414,12 @@ def sym_graph_embedding(graph):
         sMat[i] += data['vector']
         sMat[j] -= data['vector']
     
-    xs = symbols(f"x1:{N}")
+    xs = sp.symbols(f"x1:{N}")
     coefs = lapMat[1:,1:]
-    posArr = zeros(N,3)
+    posArr = sp.zeros(N,3)
     for ax in range(3):
-        matrix = Matrix(np.concatenate((coefs, sMat[1:,ax:ax+1]),axis=1))
-        res = solve_linear_system_LU(matrix, xs)
+        matrix = sp.Matrix(np.concatenate((coefs, sMat[1:,ax:ax+1]),axis=1))
+        res = sp.solve_linear_system_LU(matrix, xs)
         for i in range(N-1):
             posArr[i+1,ax] = res[xs[i]]
         # posArr.append([res[key] for key in xs])
@@ -428,7 +431,7 @@ def sym_graph_embedding(graph):
     # print(sMat)
 
 # These two functions are adapted from Networkx
-#===================
+#################
 def _generic_bfs_edges(G, source, neighbors=None, depth_limit=None, sort_neighbors=None):
     """
     from NetworkX's generic_bfs_edges, but slightly change sort_neighbors
@@ -464,10 +467,10 @@ def _bfs_edges(G, source, reverse=False, depth_limit=None, sort_neighbors=None):
     else:
         successors = G.neighbors
     yield from _generic_bfs_edges(G, source, successors, depth_limit, sort_neighbors)
-#===================
 
+####################
 
-def bfs_sorting(atoms, graph):
+def bfs_sorting(atoms, graph, baryPos=False):
     """
     Get all the permutations based on canonical forms and BFS.
     Return `len(atoms)` permutations.
@@ -477,7 +480,8 @@ def bfs_sorting(atoms, graph):
 
 
     N = len(atoms)
-    baryPos = sym_graph_embedding(graph)
+    if baryPos is False:
+        baryPos = sym_graph_embedding(graph)
     # realPos = atoms.get_scaled_positions()
     # realPos -= realPos[0] # make translation so that the first atomic position is (0,0,0)
     # diffPos = realPos - np.array(baryPos).astype(realPos.dtype)
@@ -523,14 +527,14 @@ def bfs_sorting(atoms, graph):
         # print(nei, s)
         for i in nei:
             # Compare displacements of parallel edges, choose the one with minimal elements
-            minD = Matrix([2,2,2])
+            minD = sp.Matrix([2,2,2])
             edges = graph[s][i]
             for _, val in edges.items():
                 vec = val['vector']
                 if val['direction'] == (s,i):
-                    D = baryPos.row(i) - baryPos.row(s) + Matrix([[int(v) for v in vec]])
+                    D = baryPos.row(i) - baryPos.row(s) + sp.Matrix([[int(v) for v in vec]])
                 else:
-                    D = baryPos.row(i) - baryPos.row(s) - Matrix([[int(v) for v in vec]])
+                    D = baryPos.row(i) - baryPos.row(s) - sp.Matrix([[int(v) for v in vec]])
                 if cmp_vec(D,minD) == -1:
                     minD = D
             allD[i] = minD
@@ -573,6 +577,131 @@ def bfs_sorting(atoms, graph):
         permArr.append(perm)
 
     return permArr
+
+def standardize_QG(graph, first, baryPos=False):
+    """
+    Get standardized quotient graph with a given first node.
+    """
+    
+    N = len(graph)
+    assert first < N
+    G = remove_selfloops(graph)
+    if baryPos is False:
+        baryPos = sym_graph_embedding(graph)
+        
+    # make sure the position of the first atom after permutaion to be [0,0,0]
+    baryPos = baryPos - sp.Matrix([baryPos.row(first)[:] for _ in range(N)])
+
+    # move all the atoms inside the cell
+    offsets = []
+    for n in range(N):
+        offsets.append([sp.floor(i) for i in baryPos.row(n)[:]])
+    
+    # change edge labels according to offsets
+    offsets = np.array(offsets, dtype=np.int)
+    newG = G.copy()
+    for edge in newG.edges(data=True, keys=True):
+        m,n, key, data = edge
+        i,j = data['direction']
+        newG[m][n][key]['vector'] = offsets[j] - offsets[i] + data['vector']
+    
+    return newG
+
+def QG_to_simple_G(graph, perm=False, baryPos=False):
+    """
+    Transform QG to simple graph, for generative models.
+    """
+
+    N = len(graph)
+    if perm is False:
+        perm = range(N)
+    else:
+        assert N == len(perm)
+    perm = list(perm)
+    G = standardize_QG(graph, perm[0], baryPos)
+    newG = nx.Graph()
+    newG.add_nodes_from(range(N))
+    for edge in G.edges(data=True):
+        m,n,data = edge
+        i,j = data['direction']
+        vec = data['vector']
+        assert m != n
+        assert i != j
+        assert {m,n} == {i,j}
+        # index after permutation
+        pm = perm.index(m)
+        pn = perm.index(n)
+        if not newG.has_edge(pm,pn):
+            newG.add_edge(pm,pn,allVec=[0 for _ in range(27)])
+        pi = perm.index(i)
+        pj = perm.index(j)
+        # make sure the direction is from low index to high index
+        # If not, reverse the vector
+        if pi > pj:
+            vec = [-1*v for v in vec]
+        ind = base3_to_dec([v+1 for v in vec])
+        assert newG[pm][pn]['allVec'][ind] == 0, "Pallel edges have the similar label, please check!"
+        newG[pm][pn]['allVec'][ind] = 1
+    
+    return newG
+
+def simple_G_to_QG(SG):
+    """
+    Transform simple graph to QG.
+    """
+
+    N = len(SG)
+    QG = nx.MultiGraph()
+    QG.add_nodes_from(range(N))
+    for edge in SG.edges(data=True):
+        m,n,data = edge
+        allVec = data['allVec']
+        assert len(allVec) == 27
+        if m < n:
+            direct = (m,n)
+        else:
+            direct = (n,m)
+        nEdge = sum(allVec)
+        # check nonzero indices
+        noZeroInds = np.nonzero(allVec)[0]
+        for i in noZeroInds:
+            vec = dec_to_base3(i)
+            vec = [0]*(3-len(vec)) + vec
+            vec = [v-1 for v in vec]
+            QG.add_edge(m,n, vector=vec, direction=direct)
+        
+    return QG
+
+
+
+def dec_to_base3(num):
+    """
+    Transform decimal number (int) to base 3 (list)
+    """
+
+    b3Arr = []
+    while True:
+        s = num//3
+        y = num%3
+        b3Arr.append(y)
+        if s==0:
+            break
+        num = s
+    
+    b3Arr.reverse()
+
+    return b3Arr
+
+def base3_to_dec(b3Arr):
+    """
+    Transform number in base 3 (list) to decimal (int)
+    """
+
+    num = 0
+    for n, i in enumerate(b3Arr[::-1]):
+        num += i * 3**n
+
+    return num
 
 def edge_ratios(graph):
     """

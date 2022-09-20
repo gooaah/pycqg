@@ -13,7 +13,7 @@ class GraphGenerator:
     def __init__(self):
         pass
 
-    def build_graph(self, atoms, coords, dim=None, maxtry=50, randGen=False):
+    def build_graph(self, atoms, coords, dim=None, maxtry=50, randGen=False, is2D=False):
         """
         Build QG from atoms.
         atoms: (ASE.Atoms) the input crystal structure.
@@ -21,6 +21,7 @@ class GraphGenerator:
         dim: int or None, the target dimension. If None, do not restrict dimension.
         maxtry: max try times
         randGen: If True, randomly generate quotient graph when direct generation fails
+        is2D: If False, use 3x3x3 supercell. If True, use 3x3x1 supercell.
         """
         self.originAtoms = atoms
         assert sum(coords)%2 == 0, "Sum of coordination numbers should be even number!"
@@ -43,7 +44,12 @@ class GraphGenerator:
         ## Calculate relative vectors between atoms in the origin cell and atoms in the surrounding 3x3x3 supercell
         negative_vec = lambda vec: tuple([-1*el for el in vec])
         duplicate = []
-        for offset in itertools.product(range(-1, 2),range(-1, 2),range(-1, 2)):
+        if is2D == True:
+            offsetIter = itertools.product(range(-1, 2),range(-1, 2),[0])
+        else:
+            offsetIter = itertools.product(range(-1, 2),range(-1, 2),range(-1, 2))
+
+        for offset in offsetIter:
             if offset != (0,0,0):
                 cellDisp = np.dot(offset, cell)
                 if Nat > 1:

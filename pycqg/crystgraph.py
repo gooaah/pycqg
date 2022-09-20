@@ -655,6 +655,9 @@ def simple_G_to_QG(SG):
     QG.add_nodes_from(range(N))
     for edge in SG.edges(data=True):
         m,n,data = edge
+        # skip self loop
+        if m == n:
+            continue
         allVec = data['allVec']
         assert len(allVec) == 27
         if m < n:

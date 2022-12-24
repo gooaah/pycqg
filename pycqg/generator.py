@@ -8,6 +8,10 @@ from ase.data import covalent_radii
 import networkx as nx
 from .crystgraph import graph_dim, graph_embedding
 from .calculator import GraphCalculator
+try:
+    from pymatgen.analysis.local_env import MinimumDistanceNN, VoronoiNN
+except:
+    pass
 
 class GraphGenerator:
     def __init__(self):
@@ -127,6 +131,7 @@ class GraphGenerator:
 
     def optimize(self, calcParm, driver, optParm, standardize=False):
         """
+        Unfinished
         Optimize structure according to the quotient graph.
         calcParm: dict, parameters of GraphCalculator
         driver: optimization driver, such as ase.optimize.BFGS
@@ -166,3 +171,43 @@ def search_edges(indices, coords, pairs):
         return edges, edgeInds
     else:
         return None, None
+
+
+def get_neighbors_of_site_with_index(struct, n, approach, delta, cutoff=10.0):
+
+    if approach == "min_dist":
+        return MinimumDistanceNN(tol=delta, cutoff=cutoff).get_nn_info(struct, n)
+
+    if approach == "voronoi":
+        return VoronoiNN(tol=delta, cutoff=cutoff).get_nn_info(struct, n)
+
+def quot_gen(atoms, struct, approach, delta, add_ratio=False):
+    radius = [covalent_radii[number] for number in atoms.get_atomic_numbers()]
+    G = nx.MultiGraph()
+    for i in range(len(struct)):
+        G.add_node(i)
+
+    for i in range(len(struct)):
+        site = struct[i]
+        neighs_list = get_neighbors_of_site_with_index(struct,i,approach,delta)
+        for nn in neighs_list:
+            j = nn['site_index']
+            if i <= j:
+                rsum = radius[i] + radius[j]
+                ratio = site.distance(nn['site']) / rsum
+                if add_ratio:
+                    G.add_edge(i,j, vector=np.array(nn['image']), direction=(i,j), ratio=ratio)
+                else:
+                    G.add_edge(i,j, vector=np.array(nn['image']), direction=(i,j))
+
+    return G
+
+def get_coor(struct):
+
+    coor_list = []
+    for i in range(len(struct)):
+        site = struct[i]
+        neighs_list = get_neighbors_of_site_with_index(struct,i)
+        coor_list.append(len(neighs_list))
+
+    return coor_list

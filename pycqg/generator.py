@@ -183,13 +183,15 @@ def get_neighbors_of_site_with_index(struct, n, approach, delta, cutoff=10.0):
 
 def quot_gen(atoms, struct, approach, delta, add_ratio=False):
     radius = [covalent_radii[number] for number in atoms.get_atomic_numbers()]
+    cutoff = atoms.cell.cellpar()[:3].min()
     G = nx.MultiGraph()
     for i in range(len(struct)):
         G.add_node(i)
 
     for i in range(len(struct)):
         site = struct[i]
-        neighs_list = get_neighbors_of_site_with_index(struct,i,approach,delta)
+        
+        neighs_list = get_neighbors_of_site_with_index(struct,i,approach,delta,cutoff)
         for nn in neighs_list:
             j = nn['site_index']
             if i <= j:

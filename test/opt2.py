@@ -36,7 +36,7 @@ if __name__ == "__main__":
     if approach == '1':
         randG = quot_gen(atoms, struct, approach='min_dist', delta=0.1, add_ratio=True)
     if approach == '2':
-        randG = quot_gen(atoms, struct, approach='voronoi', delta=0.5, add_ratio=True)
+        randG = quot_gen(atoms, struct, approach='voronoi', delta=0.6, add_ratio=True)
     if approach == '3':
         gen = GraphGenerator()
         randG = gen.build_graph(atoms, [4]*len(atoms))

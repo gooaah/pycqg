@@ -55,7 +55,7 @@ if __name__ == "__main__":
         atoms.set_scaled_positions(stardPos)
     ase.io.write('start.vasp', atoms, vasp5=1, direct=1)
 
-    calc = GraphCalculator(k1=2, k2=2, cmax= 1.2, cmin=.7, cadd=0.1)
+    calc = GraphCalculator(k1=2, k2=2, cmax= 1.2, cmin=.7, cunbond=1.3)
     atoms.set_calculator(calc)
     atoms.info['graph'] = randG.copy()
 

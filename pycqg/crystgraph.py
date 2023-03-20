@@ -14,6 +14,28 @@ from collections import deque
 
 from yaml import Mark
 
+def S_index(i, S):
+    for j in range(len(S)):
+        if i in S[j].nodes():
+            return j
+
+def connect_component(indices, pairs, G, ratios):
+    edges = []
+    edgeInds = []
+    S_done = []
+    S = [G.subgraph(c).copy() for c in nx.connected_components(G)]
+    for ind in indices:
+        if len(S) == 1:
+            break
+        m,n,_,_,_ = pairs[ind]
+        m_index = S_index(m, S)
+        n_index = S_index(n, S)
+        if m_index != n_index:
+            m,n,i,j,k = pairs[ind]
+            G.add_edge(m,n, vector=[i,j,k], direction=(m,n), ratio=ratios[ind])
+            S = [G.subgraph(c).copy() for c in nx.connected_components(G)]
+    return G
+
 def quotient_graph(atoms, coef=1.1, add_ratio=False):
     """
     Return crystal quotient graph of the atoms.

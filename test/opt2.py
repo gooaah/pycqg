@@ -22,8 +22,6 @@ if __name__ == "__main__":
 
     filename = sys.argv[1]
     atoms = ase.io.read(filename)
-    parser = CifParser(filename)
-    struct = parser.get_structures()[0]
     oriAts = atoms[:]
 
     if len(sys.argv) == 3:
@@ -34,12 +32,13 @@ if __name__ == "__main__":
 
     # randG = gen.build_graph(atoms, [2,2,2,2,4,4])
     if approach == '1':
-        randG = quot_gen(atoms, struct, approach='min_dist', delta=0.1, add_ratio=True)
+        coor_num = quot_gen(atoms, approach='min_dist', delta=0.1)
     if approach == '2':
-        randG = quot_gen(atoms, struct, approach='voronoi', delta=0.6, add_ratio=True)
+        coor_num = quot_gen(atoms, approach='voronoi', delta=0.6)
     if approach == '3':
-        gen = GraphGenerator()
-        randG = gen.build_graph(atoms, [4]*len(atoms))
+        coor_num = [4]*len(atoms)
+    gen = GraphGenerator()
+    randG = gen.build_graph(atoms, coor_num)
 
     if randG is not None:
         ratios = edge_ratios(randG)
@@ -55,7 +54,7 @@ if __name__ == "__main__":
         atoms.set_scaled_positions(stardPos)
     ase.io.write('start.vasp', atoms, vasp5=1, direct=1)
 
-    calc = GraphCalculator(k1=2, k2=2, cmax= 1.2, cmin=.7, cunbond=1.3)
+    calc = GraphCalculator(k1=2, k2=2, cmax= 1.1, cmin=.9, cunbond=1.3)
     atoms.set_calculator(calc)
     atoms.info['graph'] = randG.copy()
 

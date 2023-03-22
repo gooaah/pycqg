@@ -8,7 +8,7 @@ import sys
 
 # (Under development) Compress molecular crystals to the closest-packed form.
 
-def lda_mol(centers, rltPos, cell, ratio, coefEps=1e-3, ratioEps=1e-1):
+def lda_mol(centers, rltPos, cell, ratio, coefEps=1e-3, ratioEps=1e-1, singleLDA=False):
     """
     Find the direction with largest vaccum gaps.
     """
@@ -24,18 +24,24 @@ def lda_mol(centers, rltPos, cell, ratio, coefEps=1e-3, ratioEps=1e-1):
                     pos = cen + rlt + offset
                     cartPos.extend(pos.tolist())
                     classes.extend([n]*len(pos))
-
+    
     clf = LinearDiscriminantAnalysis(n_components=3)
     clf.fit(cartPos, classes)
+    print("")
     print(f"Variance ratio: {clf.explained_variance_ratio_}")
 
     stress = np.zeros((3,3))
-    for i in range(3):
-        ldaVec = clf.scalings_[:,i]
-        ldaVec = ldaVec/np.linalg.norm(ldaVec)
-        oneStress = np.outer(ldaVec, ldaVec)
-        stress += oneStress*clf.explained_variance_ratio_[i]
+    if not singleLDA:
+        for i in range(3):
+            ldaVec = clf.scalings_[:,i]
+            ldaVec = ldaVec/np.linalg.norm(ldaVec)
+            oneStress = np.outer(ldaVec, ldaVec)
+            stress += oneStress*clf.explained_variance_ratio_[i]
         # stress += oneStress
+    else:
+        ldaVec = clf.scalings_[:,0]
+        ldaVec = ldaVec/np.linalg.norm(ldaVec)
+        stress = np.outer(ldaVec, ldaVec)
 
     # print(ldaVec)
 

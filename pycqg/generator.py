@@ -6,8 +6,13 @@ from ase.optimize.sciopt import SciPyFminBFGS, SciPyFminCG
 from ase.constraints import UnitCellFilter, ExpCellFilter, StrainFilter
 from ase.data import covalent_radii
 import networkx as nx
-from .crystgraph import graph_dim, graph_embedding
+from .crystgraph import graph_dim, graph_embedding, connect_component
 from .calculator import GraphCalculator
+from pymatgen.io.ase import AseAtomsAdaptor
+try:
+    from pymatgen.analysis.local_env import MinimumDistanceNN, VoronoiNN
+except:
+    pass
 
 class GraphGenerator:
     def __init__(self):
@@ -96,6 +101,10 @@ class GraphGenerator:
                         return G
                 else:
                     return G
+            else:
+                G = connect_component(sortInd, pair, G, ratio)
+                self.randG = G
+                return G
 
         ## If we cannot build the graph, we choose the edges randomly
         # raise NotImplementedError("Random generation has never been implemented!")
@@ -127,6 +136,7 @@ class GraphGenerator:
 
     def optimize(self, calcParm, driver, optParm, standardize=False):
         """
+        Unfinished
         Optimize structure according to the quotient graph.
         calcParm: dict, parameters of GraphCalculator
         driver: optimization driver, such as ase.optimize.BFGS
@@ -166,3 +176,41 @@ def search_edges(indices, coords, pairs):
         return edges, edgeInds
     else:
         return None, None
+
+
+def get_neighbors_of_site_with_index(struct, n, approach, delta, cutoff=10.0):
+
+    if approach == "min_dist":
+        return MinimumDistanceNN(tol=delta, cutoff=cutoff).get_nn_info(struct, n)
+
+    if approach == "voronoi":
+        return VoronoiNN(tol=delta, cutoff=cutoff).get_nn_info(struct, n)
+
+def quot_gen(ats, approach, delta):
+    struct = AseAtomsAdaptor.get_structure(ats)
+    cutoff = atoms.cell.cellpar()[:3].mean()
+    ats_num = ats.get_atomic_numbers()
+    ats_spe = np.unique(ats_num)
+
+    coor_num = []
+    for i in range(len(struct)):
+        site = struct[i]
+        neighs_list = get_neighbors_of_site_with_index(struct,i,approach=approach,delta=delta,cutoff=cutoff)
+        coor_num.append(len(neighs_list))
+
+    j = 0
+    ave_coor = []
+    for num in np.unique(ats_num):
+        count = 0
+        sum_coor = 0
+        while j < len(ats) and ats_num[j] == num:
+            sum_coor += coor_num[j]
+            count += 1
+            j += 1
+        ave_coor.append(round(sum_coor / count, 0))
+
+    for i in range(len(ats_num)):
+        j = np.where(ats_spe == ats_num[i])[0]
+        ats_num[i] = ave_coor[j[0]]
+
+    return ats_num
